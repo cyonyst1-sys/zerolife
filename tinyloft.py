@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -3012,34 +3012,34 @@ class World:
 
 
 # --------------------------------------------------------------------------
-# his friend's place: a dark modern house full of people.  They watch the
-# match, drift to the bar for a drink, pile onto the couch for video games.
-# It is the same size of room as the loft, so the same physics throws
-# everybody about when the device is tilted or shaken.
+# his friend's place: a dark modern house on three stepped tiers, full of
+# people.  Ground floor: kitchen, bar, and a lounge where they watch the match.
+# First floor: a den for video games.  Top: a bedroom under a flat roof.
+# The scene has its own camera and room size (swapped in while he is there),
+# so the same physics throws everybody about, and off the upper floors.
 # --------------------------------------------------------------------------
-P_KITCHEN = (6, 0, 0, 58, 10, 14)
-P_FRIDGE = (60, 0, 0, 72, 11, 30)
-P_CONSOLE = (86, 0, 0, 126, 7, 7)
-P_ISLAND = (14, 22, 0, 58, 30, 15)
-P_STAIRS = (0, 60, 0, 12, 98, 20)
-P_TABLE = (98, 20, 0, 116, 28, 5)
-P_ARM_L = (86, 38, 0, 89, 54, 11)
-P_SEAT = (89, 38, 0, 125, 50, 7)
-P_ARM_R = (125, 38, 0, 128, 54, 11)
-P_BACK = (89, 50, 0, 125, 54, 15)
-P_ORDER = ["kitchen", "island", "fridge", "stairs", "console", "table", "p_arm_l", "p_seat", "p_arm_r", "p_back"]
-P_BOXES = {"kitchen": P_KITCHEN, "island": P_ISLAND, "fridge": P_FRIDGE, "stairs": P_STAIRS, "console": P_CONSOLE,
-           "table": P_TABLE, "p_arm_l": P_ARM_L, "p_seat": P_SEAT, "p_arm_r": P_ARM_R, "p_back": P_BACK}
-P_SOLIDS = [P_KITCHEN, P_FRIDGE, P_CONSOLE, P_ISLAND, P_STAIRS, P_TABLE, P_ARM_L, P_SEAT, P_ARM_R, P_BACK,
-            (0, 0, 36, 12, 60, 38)]
+HOME_VIEW = (OX, OY, RX, RY, RH)
+PARTY_VIEW = (145, 93, 110, 80, 108)
+F1, F2 = 36.0, 72.0                           # heights of the upper floors
+T2X, T2Y, T3X, T3Y = 70, 50, 45, 35           # how far the first and top floors reach
+LANE, LANE1 = 28.5, 19.0                      # the clear strips people walk along, downstairs and up
+P_T0 = [("kitchen", (6, 0, 0, 50, 9, 14)), ("island", (10, 20, 0, 50, 27, 15)), ("fridge", (52, 0, 0, 62, 10, 30)),
+        ("stairs", (0, 52, 0, 10, 78, 36)), ("table", (80, 13, 0, 96, 20, 5)), ("p_arm_l", (70, 30, 0, 73, 44, 11)),
+        ("p_seat", (73, 30, 0, 101, 40, 7)), ("p_arm_r", (101, 30, 0, 104, 44, 11)), ("p_back", (73, 40, 0, 101, 44, 15))]
+P_T1 = [("table2", (20, 9, F1, 34, 15, F1 + 5)), ("arm2_l", (9, 22, F1, 12, 35, F1 + 11)),
+        ("seat2", (12, 22, F1, 42, 31, F1 + 7)), ("arm2_r", (42, 22, F1, 45, 35, F1 + 11)),
+        ("back2", (12, 31, F1, 42, 35, F1 + 15))]
+P_T2 = [("bed", (4, 6, F2, 26, 26, F2 + 6))]
+P_BOXES = dict(P_T0 + P_T1 + P_T2)
+P_SOLIDS = ([b for n, b in P_T0 + P_T1 + P_T2 if n != "stairs"]
+            + [(0, 52, 0, 10, 78, 18), (0, 0, F1 - 3, T2X, T2Y, F1), (0, 0, F2 - 3, T3X, T3Y, F2),
+               (-2, -2, 104, T3X + 2, T3Y + 2, 107)])
 HOME_SOLIDS = SOLIDS
-LANE = 34.5                                   # the clear strip of floor everybody walks along
-P_SEATS = [(95, 44), (105, 44), (115, 44), (123, 44)]
-P_PENDANTS = [(22, 26), (36, 26), (50, 26), (108, 34)]
-P_WINDOWS = [(8, 28), (30, 50)]               # glowing panels on the left wall: y ranges
-P_DOORS_UP = [(12, 24), (36, 48)]             # and the upstairs doors
-P_TV = [P(86, 0, 16), P(126, 0, 16), P(126, 0, 38), P(86, 0, 38)]
+P_SEATS = [(77.5, 35), (84, 35), (90.5, 35), (97, 35)]
+P_SEATS1 = [(17, 26.5), (24, 26.5), (31, 26.5), (38, 26.5)]
+P_PENDANTS = [(20, 23.5, F1 - 3, 22), (40, 23.5, F1 - 3, 22), (27, 19, F2 - 3, 60)]      # x, y, hung from, bulb height
 CHARCOAL = (116, 116, 148)
+GLOW = (255, 172, 84)
 FRIENDS = [dict(skin=(150, 100, 70), hair=(30, 24, 24), shirt=(90, 170, 220), pants=(60, 60, 84)),
            dict(skin=(250, 214, 180), hair=(224, 176, 80), shirt=(120, 200, 130), pants=(92, 72, 112)),
            dict(skin=(204, 152, 112), hair=(160, 66, 44), shirt=(240, 200, 80), pants=(52, 84, 94)),
@@ -3051,20 +3051,36 @@ GAMEWIN = ["I WIN!", "GG", "TOO EASY", "UNBEATABLE"]
 GAMELOSE = ["REMATCH", "NO FAIR", "LAG!", "MY CONTROLLER IS BROKEN"]
 
 
+def set_view(v):
+    """Swap the camera and the size of the room the physics uses."""
+    global OX, OY, RX, RY, RH
+    OX, OY, RX, RY, RH = v
+
+
+def floor_at(x, y, z):
+    """Which floor someone at this height is on: its number and its level."""
+    if z > F2 - 8 and x < T3X and y < T3Y:
+        return 2, F2
+    if z > F1 - 8 and x < T2X and y < T2Y:
+        return 1, F1
+    return 0, 0.0
+
+
 class Party:
     def __init__(self, world):
         global SOLIDS
         SOLIDS = P_SOLIDS
+        set_view(PARTY_VIEW)
         w = self.w = world
         self.t = 0.0
         m = w.man
-        m.x, m.y, m.z = 137.0, 3.0, 0.0
+        m.x, m.y, m.z = 104.0, 3.0, 0.0
         m.pose, m.view, m.visible, m.away, m.hidden = "stand", "side", True, False, False
         self.people = [m]
         for i, look in enumerate(FRIENDS):
             g = Man(w)
             g.look = look
-            g.x, g.y = (22.0 + i * 10, LANE + 1) if i else (36.0, 16.0)
+            g.x, g.y = (18.0 + i * 8, LANE + 2) if i else (30.0, 14.0)
             g.view, g.face = ("side", 1 if i % 2 else -1) if i else ("front", 1)
             g.anim = i * 1.3
             self.people.append(g)
@@ -3076,59 +3092,91 @@ class Party:
         self.lamp_d = [0.0, 0.0]
         self.lamp_v = [0.0, 0.0]
         self.done = False
+        self.tv0 = (72, 96, 12, 32)                    # x0, x1, z0, z1 on the right wall
+        self.tv1 = (14, 40, F1 + 10, F1 + 28)
         self.room = self.build()
         self.mask = pygame.mask.from_surface(self.room)
         self.lm = pygame.Surface((W, H))
         self.fx = pygame.Surface((W, H))
         self.lit_key = None
-        self.send(m, 137, LANE)
+        self.send(m, 104, LANE)
         m.say("HEY EVERYONE!")
 
     def close(self):
         global SOLIDS
         SOLIDS = HOME_SOLIDS
+        set_view(HOME_VIEW)
 
     # ---- who goes where ----
     def send(self, p, x, y, z=0.0, pose="stand", view="side", face=1):
-        """Walk p to a spot: out to the lane, along it, then in."""
+        """Plan a walk for p: out to the lane, along it, up or down the stairs, in to the spot."""
         p.goal = (float(x), float(y), z, pose, view, face)
+        fc, cz = floor_at(p.x, p.y, p.z)
+        fg, gz = floor_at(x, y, z)
         if p.pose == "sit":
-            p.y, p.z, p.pose, p.view = LANE, 0.0, "stand", "side"
+            p.y, p.z, p.pose, p.view = (LANE1 if fc else LANE), cz, "stand", "side"
+        px, py = p.x, p.y
         path = []
-        if p.y < 20 and p.x < 60:                      # from behind the bar
-            path += [(62, p.y), (62, LANE)]
-        elif p.x > 130 and p.y < 30:                   # from the front door
-            path.append((137, LANE))
-        elif abs(p.y - LANE) > 1:
-            path.append((clamp(p.x, 16, 137), LANE))
-        if pose == "sit":
-            path.append((x, LANE))
-        elif y < 20 and x < 60:
-            path += [(62, LANE), (62, y), (x, y)]
-        elif x > 130 and y < 30:
-            path += [(137, LANE), (x, y)]
+        if fc == 2:                                    # down from the bedroom first
+            path += [(40, 20, F2), (47, 4, F2), (68, 4, F1)]
+            fc, px, py = 1, 68, 4
+
+        def out0(px, py):
+            if py < 20 and px < 52:                    # from behind the bar
+                return [(56, py, 0), (56, LANE, 0)]
+            if px > 97 and py < 25:                    # from the front door
+                return [(104, LANE, 0)]
+            return [(clamp(px, 14, 104), LANE, 0)] if abs(py - LANE) > 1 else []
+
+        def out1(px, py):                              # to the corridor at the top of the stairs
+            if py >= 36:
+                return [(5, py, F1)]
+            return ([(px, LANE1, F1)] if abs(py - LANE1) > 1 else []) + [(5, LANE1, F1)]
+
+        if fc == 1 and fg == 0:
+            path += out1(px, py) + [(5, 51, F1), (5, 79, 0), (14, 79, 0), (14, LANE, 0)]
+            px, py, fc = 14, LANE, 0
+        elif fc == 0 and fg == 1:
+            path += out0(px, py) + [(14, LANE, 0), (14, 79, 0), (5, 79, 0), (5, 51, F1)]
+            px, py, fc = 5, 51, 1
+        if fg == 0:
+            path += out0(px, py)
+            if pose == "sit":
+                path.append((x, LANE, 0))
+            elif y < 20 and x < 52:
+                path += [(56, LANE, 0), (56, y, 0), (x, y, 0)]
+            elif x > 97 and y < 25:
+                path += [(104, LANE, 0), (x, y, 0)]
+            else:
+                path += [(x, LANE, 0), (x, y, 0)]
         else:
-            path += [(x, LANE), (x, y)]
+            if abs(px - 5) > 1:
+                path += out1(px, py)
+            if y >= 36:
+                path += [(5, y, F1), (x, y, F1)]
+            else:
+                path += [(5, LANE1, F1), (x, LANE1, F1)]
         p.path = path
 
     def assign(self, phase):
-        ps = self.people[:]
-        m = ps[0]
-        others = ps[1:]
+        m, others = self.people[0], self.people[1:]
         random.shuffle(others)
-        if phase in ("tv", "games"):
-            order = [others[0], m, others[1], others[2]]
-            for p, (x, y) in zip(order, P_SEATS):
+        if phase == "tv":
+            for p, (x, y) in zip([others[0], m, others[1], others[2]], P_SEATS):
                 self.send(p, x, y, 7.0, "sit", "back")
-            self.send(others[3], *((136, 45, 0.0, "stand", "back") if phase == "tv" else (107, 61, 0.0, "stand", "back")))
+            self.send(others[3], 107, 37, 0.0, "stand", "back")
+        elif phase == "games":
+            for p, (x, y) in zip([others[0], m, others[1], others[2]], P_SEATS1):
+                self.send(p, x, y, F1 + 7, "sit", "back")
+            self.send(others[3], 27, 41, F1, "stand", "back")
         elif phase == "bar":
-            self.send(others[0], 36, 16, 0.0, "stand", "front")
-            self.send(m, 30, LANE + 1, 0.0, "stand", "side", -1)
-            self.send(others[1], 22, LANE + 1, 0.0, "stand", "side", 1)
-            self.send(others[2], 42, LANE + 1, 0.0, "stand", "back")
-            self.send(others[3], 51, LANE + 1, 0.0, "stand", "side", -1)
+            self.send(others[0], 30, 14, 0.0, "stand", "front")
+            self.send(m, 26, LANE + 2, 0.0, "stand", "side", -1)
+            self.send(others[1], 18, LANE + 2, 0.0, "stand", "side", 1)
+            self.send(others[2], 36, LANE + 2, 0.0, "stand", "back")
+            self.send(others[3], 44, LANE + 2, 0.0, "stand", "side", -1)
         elif phase == "leave":
-            self.send(m, 137, 3)
+            self.send(m, 104, 3)
             m.say(random.choice(["THANKS, SAM!", "SEE YOU ALL", "GOOD NIGHT!"]))
 
     # ---- one tick ----
@@ -3166,31 +3214,32 @@ class Party:
                             p.say(random.choice(DAZED))
                 else:
                     p.still += dt
-                    if p.still > 1.6:                   # back on his feet, and back to what he was doing
+                    if p.still > 1.6:                   # back on their feet, and back to what they were doing
                         p.body, p.rag = None, None
-                        p.pose, p.view, p.z = "stand", "side", 0.0
+                        f, fz = floor_at(p.x, p.y, p.z)
+                        p.pose, p.view, p.z = "stand", "side", fz
                         for (x0, y0, z0, x1, y1, z1) in P_SOLIDS:
-                            if z0 == 0 and x0 - 2 < p.x < x1 + 2 and y0 - 2 < p.y < y1 + 2:
-                                p.x, p.y = clamp(p.x, 16, 137), LANE
+                            if z0 == fz and x0 - 2 < p.x < x1 + 2 and y0 - 2 < p.y < y1 + 2:
+                                p.x, p.y = ((clamp(p.x, 14, 104), LANE), (clamp(p.x, 5, 66), LANE1), (40.0, 20.0))[f]
                                 break
                         if p.goal:
                             self.send(p, *p.goal)
                 continue
             p.wobble = lerp(p.wobble, clamp((gx - gy) * 0.7, -1, 1), min(1, dt * 6))
-            if p.path:                                  # walking
-                x, y = p.path[0]
+            if p.path:                                  # walking, stairs included
+                x, y, z = p.path[0]
                 dx, dy = x - p.x, y - p.y
                 d = math.hypot(dx, dy)
-                step = 30 * dt
+                step = (22 if abs(z - p.z) > 1 else 30) * dt
                 if d <= step:
-                    p.x, p.y = float(x), float(y)
+                    p.x, p.y, p.z = float(x), float(y), float(z)
                     p.path.pop(0)
                     if not p.path:
-                        gx_, gy_, gz_, pose, view, face = p.goal
-                        p.x, p.y, p.z, p.pose, p.view, p.face = gx_, gy_, gz_, pose, view, face
+                        p.x, p.y, p.z, p.pose, p.view, p.face = p.goal
                 else:
                     p.x += dx / d * step
                     p.y += dy / d * step
+                    p.z += (z - p.z) * step / d
                     if abs(dx - dy) > 0.25 * d:
                         p.face = 1 if dx - dy > 0 else -1
                     p.pose, p.view = "walk", "side"
@@ -3203,8 +3252,8 @@ class Party:
                     self.done = True
             else:
                 self.phase = self.phases.pop(0) if self.phases else "leave"
-                self.phase_t = random.uniform(15, 20) if self.phase != "leave" else 1.0
-                self.event_t = 5.0
+                self.phase_t = random.uniform(18, 24) if self.phase != "leave" else 1.0
+                self.event_t = 7.0
                 self.assign(self.phase)
         self.event_t -= dt
         self.tv_flash = max(0.0, self.tv_flash - dt)
@@ -3248,9 +3297,9 @@ class Party:
         # lamps, lights
         down = max(0.3, -gz)
         for i in (0, 1):
-            tgt = clamp(14 * w.g[i] / down, -14, 14) if gz < 0 else math.copysign(14, w.g[i] or 1)
-            self.lamp_v[i] += (25 * (tgt - self.lamp_d[i]) - 0.9 * self.lamp_v[i] + w.jerk[i] * 200) * dt
-            self.lamp_d[i] = clamp(self.lamp_d[i] + self.lamp_v[i] * dt, -15, 15)
+            tgt = clamp(9 * w.g[i] / down, -9, 9) if gz < 0 else math.copysign(9, w.g[i] or 1)
+            self.lamp_v[i] += (25 * (tgt - self.lamp_d[i]) - 0.9 * self.lamp_v[i] + w.jerk[i] * 160) * dt
+            self.lamp_d[i] = clamp(self.lamp_d[i] + self.lamp_v[i] * dt, -10, 10)
         tilt = math.hypot(gx, gy)
         w.flick = max(w.flick - dt * 3, min(1.0, w.shake * 0.7 + w.rate * 0.45 + (0.22 if tilt > 0.3 else 0)
                                            + (0.3 if gz > 0 else 0)))
@@ -3263,93 +3312,128 @@ class Party:
         s.set_colorkey(KEY, pygame.RLEACCEL)
         em = self.emis = pygame.Surface((W, H))
         em.set_colorkey((0, 0, 0), pygame.RLEACCEL)
+        ov = self.rails = pygame.Surface((W, H))        # glass rails, drawn over the people behind them
+        ov.fill(KEY)
+        ov.set_colorkey(KEY, pygame.RLEACCEL)
         rnd = random.Random(5)
-        g, yz, bz = YARD, YZ, BASE
-        slab = (88, 90, 116)
-        # a concrete terrace
-        poly(s, slab, [P(-g, -g, yz), P(RX + g, -g, yz), P(RX + g, RY + g, yz), P(-g, RY + g, yz)])
-        for i in range(-g, RX + g, 18):
-            pygame.draw.line(s, shade(slab, 0.84), P(i, RY, yz), P(i, RY + g, yz))
-        for i in range(0, RY + g, 18):
-            pygame.draw.line(s, shade(slab, 0.84), P(RX, i, yz), P(RX + g, i, yz))
-        poly(s, shade(slab, 0.6), [P(-g, RY + g, yz), P(RX + g, RY + g, yz), P(RX + g, RY + g, bz), P(-g, RY + g, bz)], shade(slab, 0.3))
-        poly(s, shade(slab, 0.42), [P(RX + g, RY + g, yz), P(RX + g, -g, yz), P(RX + g, -g, bz), P(RX + g, RY + g, bz)], shade(slab, 0.3))
-        for x, y in ((-6, 106), (150, 108), (158, 60)):       # planters
-            box(s, x - 3, y - 3, yz, x + 3, y + 3, yz + 5, (60, 60, 84), bands=1)
-            px, py = P(x, y, yz + 5)
-            for dx, dy, r in ((0, -3, 4), (-2, -5, 3), (2, -6, 2)):
-                pygame.draw.circle(s, (52, 120, 84), (px + dx, py + dy), r)
-        # walls: charcoal panels
+        ink = (24, 22, 36)
         wl, wr = CHARCOAL, shade(CHARCOAL, 0.82)
-        poly(s, wl, [P(0, 0, 0), P(0, RY, 0), P(0, RY, RH), P(0, 0, RH)])
-        poly(s, wr, [P(0, 0, 0), P(RX, 0, 0), P(RX, 0, RH), P(0, 0, RH)])
-        for y in range(0, RY, 20):
-            pygame.draw.line(s, shade(wl, 0.8), P(0, y, 0), P(0, y, RH))
-            pygame.draw.line(s, shade(wl, 1.12), P(0, y + 1, 0), P(0, y + 1, RH))
-        for x in range(0, RX, 25):
-            pygame.draw.line(s, shade(wr, 0.8), P(x, 0, 0), P(x, 0, RH))
-            pygame.draw.line(s, shade(wr, 1.12), P(x + 1, 0, 0), P(x + 1, 0, RH))
-        wall_rect(s, shade(wl, 0.9), "x", 0, RY, 46, RH)
-        wall_rect(s, shade(wr, 0.9), "y", 0, RX, 46, RH)
-        # glowing window panels downstairs, glowing doors upstairs
-        glow_c = (255, 172, 84)
-        for y0, y1 in P_WINDOWS:
-            wall_rect(s, glow_c, "x", y0, y1, 8, 30, (30, 28, 44))
-            pygame.draw.line(s, (30, 28, 44), P(0, (y0 + y1) / 2, 8), P(0, (y0 + y1) / 2, 30))
-            wall_rect(s, (255, 214, 140), "x", y0 + 1, y1 - 1, 9, 13)
-        for y0, y1 in P_DOORS_UP:
-            wall_rect(s, glow_c, "x", y0, y1, 38, 56, (30, 28, 44))
-            wall_rect(s, (255, 214, 140), "x", y0 + 1, y1 - 1, 39, 43)
-        # floor: big slate tiles, an orange rug in front of the tv
-        fl = (156, 156, 182)
-        poly(s, fl, [P(0, 0), P(RX, 0), P(RX, RY), P(0, RY)])
-        for i in range(0, RX, 15):
-            for j in range(0, RY, 15):
-                c = shade(fl, rnd.uniform(0.9, 1.08))
-                poly(s, c, [P(i, j), P(min(RX, i + 15), j), P(min(RX, i + 15), min(RY, j + 15)), P(i, min(RY, j + 15))])
-                pygame.draw.line(s, shade(c, 1.14), P(i + 1, j + 1), P(min(RX, i + 14), j + 1))
-        for i in range(0, RX, 15):
-            pygame.draw.line(s, shade(fl, 0.7), P(i, 0), P(i, RY))
-        for j in range(0, RY, 15):
-            pygame.draw.line(s, shade(fl, 0.7), P(0, j), P(RX, j))
-        poly(s, (176, 92, 52), [P(92, 12), P(124, 12), P(124, 34), P(92, 34)], (110, 54, 36))
-        poly(s, (214, 130, 70), [P(95, 14.5), P(121, 14.5), P(121, 31.5), P(95, 31.5)])
-        poly(s, (176, 92, 52), [P(98, 17), P(118, 17), P(118, 29), P(98, 29)])
-        # kitchen wall: lit splashback, dark cupboards above, a strip light under them
-        wall_rect(s, (255, 164, 76), "y", 8, 56, 15, 26, (30, 28, 44))
-        for x in range(14, 56, 6):
-            pygame.draw.line(s, (226, 130, 56), P(x, 0, 15), P(x, 0, 26))
-        wall_rect(s, (44, 44, 64), "y", 8, 56, 27, 40, (24, 22, 36))
-        for x in (20, 32, 44):
-            pygame.draw.line(s, (24, 22, 36), P(x, 0, 27), P(x, 0, 40))
-        pygame.draw.line(s, (255, 236, 190), P(9, 0.5, 26.6), P(55, 0.5, 26.6))
-        # the television's frame, the front door
-        wall_rect(s, (22, 22, 34), "y", 84, 128, 14, 40, (12, 12, 20))
-        wall_rect(s, (44, 44, 62), "y", 134, 146, 0, 31, (20, 20, 32))
-        wall_rect(s, glow_c, "y", 142, 144, 6, 26)
-        # baked contact shadows
+        slab = (88, 90, 116)
+        self.glows = []                                 # (kind, points, light position) for everything lit
+
+        def window(axis, a0, a1, z0, z1, pool):
+            wall_rect(s, GLOW, axis, a0, a1, z0, z1, ink)
+            wall_rect(s, (255, 214, 140), axis, a0 + 1, a1 - 1, z0 + 1, z0 + (z1 - z0) * 0.3)
+            mid = (a0 + a1) / 2
+            pygame.draw.line(s, ink, P(0, mid, z0) if axis == "x" else P(mid, 0, z0),
+                             P(0, mid, z1) if axis == "x" else P(mid, 0, z1))
+            pts = ([P(0, a0, z0), P(0, a1, z0), P(0, a1, z1), P(0, a0, z1)] if axis == "x"
+                   else [P(a0, 0, z0), P(a1, 0, z0), P(a1, 0, z1), P(a0, 0, z1)])
+            pygame.draw.polygon(em, GLOW, pts)
+            pygame.draw.polygon(em, (60, 40, 40), pts, 1)
+            self.glows.append((pts, pool, P(0, mid, (z0 + z1) / 2) if axis == "x" else P(mid, 0, (z0 + z1) / 2)))
+
+        def walls(xmax, ymax, z0, z1):
+            wall_rect(s, wl, "x", 0, ymax, z0, z1)
+            wall_rect(s, wr, "y", 0, xmax, z0, z1)
+            for y in range(0, ymax, 18):
+                pygame.draw.line(s, shade(wl, 0.8), P(0, y, z0), P(0, y, z1))
+                pygame.draw.line(s, shade(wl, 1.12), P(0, y + 1, z0), P(0, y + 1, z1))
+            for x in range(0, xmax, 22):
+                pygame.draw.line(s, shade(wr, 0.8), P(x, 0, z0), P(x, 0, z1))
+                pygame.draw.line(s, shade(wr, 1.12), P(x + 1, 0, z0), P(x + 1, 0, z1))
+            wall_rect(s, shade(wl, 0.6), "y", -4, 0, z0, z1, ink, ymax)            # cut ends
+            wall_rect(s, shade(wr, 0.6), "x", -4, 0, z0, z1, ink, xmax)
+
+        def floor(xmax, ymax, z, col, n):
+            poly(s, col, [P(0, 0, z), P(xmax, 0, z), P(xmax, ymax, z), P(0, ymax, z)])
+            for i in range(0, xmax, n):
+                for j in range(0, ymax, n):
+                    c = shade(col, rnd.uniform(0.9, 1.08))
+                    i1, j1 = min(xmax, i + n), min(ymax, j + n)
+                    poly(s, c, [P(i, j, z), P(i1, j, z), P(i1, j1, z), P(i, j1, z)])
+                    pygame.draw.line(s, shade(c, 1.14), P(i + 1, j + 1, z), P(i1 - 1, j + 1, z))
+            for i in range(0, xmax, n):
+                pygame.draw.line(s, shade(col, 0.7), P(i, 0, z), P(i, ymax, z))
+            for j in range(0, ymax, n):
+                pygame.draw.line(s, shade(col, 0.7), P(0, j, z), P(xmax, j, z))
+
+        def rail(ax, ay, bx, by, z):
+            for t in range(0, 11):
+                x, y = lerp(ax, bx, t / 10.0), lerp(ay, by, t / 10.0)
+                pygame.draw.line(ov, (150, 160, 190), P(x, y, z), P(x, y, z + 7))
+            pygame.draw.line(ov, (196, 206, 230), P(ax, ay, z + 7), P(bx, by, z + 7))
+
+        # a concrete pad for the house to stand on
+        g = 6
+        poly(s, slab, [P(-g, -g, -4), P(RX + g, -g, -4), P(RX + g, RY + g, -4), P(-g, RY + g, -4)])
+        poly(s, shade(slab, 0.6), [P(-g, RY + g, -4), P(RX + g, RY + g, -4), P(RX + g, RY + g, -8), P(-g, RY + g, -8)], ink)
+        poly(s, shade(slab, 0.42), [P(RX + g, RY + g, -4), P(RX + g, -g, -4), P(RX + g, -g, -8), P(RX + g, RY + g, -8)], ink)
+        # ---- ground floor ----
+        walls(RX, RY, 0, F1)
+        floor(RX, RY, 0, (156, 156, 182), 14)
+        poly(s, (176, 92, 52), [P(74, 8), P(100, 8), P(100, 27), P(74, 27)], (110, 54, 36))        # lounge rug
+        poly(s, (214, 130, 70), [P(77, 10.5), P(97, 10.5), P(97, 24.5), P(77, 24.5)])
+        window("x", 12, 28, 8, 28, (16, 20, 3))
+        window("x", 32, 46, 8, 28, (16, 39, 3))
+        wall_rect(s, (255, 164, 76), "y", 8, 48, 15, 25, ink)                                      # lit splashback
+        for x in range(13, 48, 5):
+            pygame.draw.line(s, (226, 130, 56), P(x, 0, 15), P(x, 0, 25))
+        wall_rect(s, (50, 50, 72), "y", 8, 48, 26, 33, ink)                                        # cupboards over it
+        pygame.draw.line(s, (255, 236, 190), P(9, 0.5, 25.6), P(47, 0.5, 25.6))
+        kb = [P(8, 0, 15), P(48, 0, 15), P(48, 0, 25), P(8, 0, 25)]
+        pygame.draw.polygon(em, (255, 164, 76), kb)
+        self.glows.append((kb, (28, 13, 6), P(28, 0, 20)))
+        wall_rect(s, (22, 22, 34), "y", 70, 98, 10, 34, (12, 12, 20))                              # tv frame
+        wall_rect(s, (50, 50, 70), "y", 100, 108, 0, 31, ink)                                      # front door
+        wall_rect(s, GLOW, "y", 105, 106.5, 6, 26)
         sh = pygame.Surface((W, H), pygame.SRCALPHA)
-        for b in (P_KITCHEN, P_FRIDGE, P_CONSOLE, P_ISLAND, P_STAIRS, P_TABLE, (86, 38, 0, 128, 54, 0)):
-            pygame.draw.polygon(sh, (10, 8, 30, 80), [P(b[0], b[4], 0), P(b[3] + 3, b[4], 0), P(b[3] + 3, b[4] + 3, 0), P(b[0], b[4] + 3, 0)])
-            pygame.draw.polygon(sh, (10, 8, 30, 80), [P(b[3], b[1], 0), P(b[3] + 3, b[1], 0), P(b[3] + 3, b[4] + 3, 0), P(b[3], b[4] + 3, 0)])
+        for n, b in P_T0 + P_T1:
+            for pts in ([P(b[0], b[4], b[2]), P(b[3] + 3, b[4], b[2]), P(b[3] + 3, b[4] + 3, b[2]), P(b[0], b[4] + 3, b[2])],
+                        [P(b[3], b[1], b[2]), P(b[3] + 3, b[1], b[2]), P(b[3] + 3, b[4] + 3, b[2]), P(b[3], b[4] + 3, b[2])]):
+                pygame.draw.polygon(sh, (10, 8, 30, 80), pts)
+        sh0 = sh.copy()
+        s.blit(sh0, (0, 0))
+        for ax, ay, bx, by, f in ((0, RY, RX, RY, 1.0), (RX, RY, RX, 0, 0.72)):                    # footing
+            poly(s, shade((80, 80, 106), f), [P(ax, ay, 0), P(bx, by, 0), P(bx, by, -4), P(ax, ay, -4)], ink)
+        # ---- first floor: slab, walls, the den ----
+        box(s, 0, 0, F1 - 3, T2X, T2Y, F1, (104, 104, 134), top=(120, 96, 84), bands=1)
+        walls(T2X, T2Y, F1, F2)
+        floor(T2X, T2Y, F1, (150, 112, 92), 10)
+        poly(s, (70, 110, 150), [P(14, 6, F1), P(40, 6, F1), P(40, 21, F1), P(14, 21, F1)], (40, 70, 110))   # den rug
+        window("x", 8, 20, F1 + 8, F1 + 28, (12, 14, F1 + 1))
+        window("x", 28, 42, F1 + 8, F1 + 28, (12, 35, F1 + 1))
+        wall_rect(s, (22, 22, 34), "y", 12, 42, F1 + 8, F1 + 30, (12, 12, 20))
+        wall_rect(s, (250, 110, 180), "y", 50, 62, F1 + 20, F1 + 23)                               # a neon strip
+        np_ = [P(50, 0, F1 + 20), P(62, 0, F1 + 20), P(62, 0, F1 + 23), P(50, 0, F1 + 23)]
+        pygame.draw.polygon(em, (255, 130, 200), np_)
+        for i in range(6):                                                                         # stairs up to the bedroom
+            box(s, 68 - (i + 1) * 3.6, 0, F1, 68 - i * 3.6, 8, F1 + (i + 1) * 6, (96, 96, 126), bands=1)
         s.blit(sh, (0, 0))
-        # footing, wall ends and tops
-        for ax, ay, bx, by, f in ((0, RY, RX, RY, 1.0), (RX, RY, RX, 0, 0.72)):
-            poly(s, shade((70, 70, 96), f), [P(ax, ay, 0), P(bx, by, 0), P(bx, by, yz), P(ax, ay, yz)], (24, 22, 36))
-        poly(s, shade(wl, 0.6), [P(-4, RY, yz), P(0, RY, yz), P(0, RY, RH), P(-4, RY, RH)], (24, 22, 36))
-        poly(s, shade(wr, 0.6), [P(RX, 0, yz), P(RX, -4, yz), P(RX, -4, RH), P(RX, 0, RH)], (24, 22, 36))
-        cap = (104, 104, 134)
-        poly(s, shade(cap, 0.86), [P(-4, -4, RH), P(0, 0, RH), P(0, RY, RH), P(-4, RY, RH)], (24, 22, 36))
-        poly(s, cap, [P(-4, -4, RH), P(RX, -4, RH), P(RX, 0, RH), P(0, 0, RH)], (24, 22, 36))
-        # the gallery upstairs with a glass rail
-        box(s, 0, 0, 36, 12, 60, 38, (84, 84, 110), bands=1)
-        for y in range(0, 61, 10):
-            pygame.draw.line(s, (150, 160, 190), P(12, y, 38), P(12, y, 45))
-        pygame.draw.line(s, (190, 200, 226), P(12, 0, 45), P(12, 60, 45))
-        # everything that glows keeps glowing
-        for y0, y1 in P_WINDOWS:
-            pygame.draw.polygon(em, glow_c, [P(0, y0 + 0.6, 8.6), P(0, y1 - 0.6, 8.6), P(0, y1 - 0.6, 29.4), P(0, y0 + 0.6, 29.4)])
-            pygame.draw.line(em, (40, 30, 40), P(0, (y0 + y1) / 2, 8), P(0, (y0 + y1) / 2, 30))
+        # ---- top floor: slab, walls, bedroom, roof ----
+        box(s, 0, 0, F2 - 3, T3X, T3Y, F2, (104, 104, 134), top=(120, 96, 84), bands=1)
+        walls(T3X, T3Y, F2, 104)
+        floor(T3X, T3Y, F2, (136, 136, 164), 9)
+        window("x", 8, 26, F2 + 8, F2 + 26, (10, 17, F2 + 1))
+        window("y", 28, 40, F2 + 8, F2 + 26, (34, 8, F2 + 1))
+        box(s, 4, 6, F2, 26, 26, F2 + 4, (70, 70, 96), bands=1)
+        box(s, 5, 7, F2 + 4, 25, 25, F2 + 6, (214, 120, 70), bands=1)
+        box(s, 8, 8, F2 + 6, 22, 13, F2 + 7.6, (240, 236, 226), bands=1)
+        box(s, 30, 22, F2, 36, 28, F2 + 6, (60, 60, 84), bands=1)
+        px, py = P(33, 25, F2 + 6)
+        for dx, dy, r in ((0, -3, 4), (-2, -5, 3), (2, -6, 2)):
+            pygame.draw.circle(s, (52, 120, 84), (px + dx, py + dy), r)
+        for x, y in ((T3X - 1, T3Y - 1), (T3X - 1, 1), (1, T3Y - 1)):
+            pygame.draw.line(s, (60, 60, 84), P(x, y, F2), P(x, y, 104), 2)
+        box(s, -2, -2, 104, T3X + 2, T3Y + 2, 107, (86, 86, 116), bands=1)
+        px, py = P(30, 12, 107)
+        s.fill((255, 214, 130), (px, py - 1, 2, 2))
+        em.fill((255, 224, 150), (px, py - 1, 2, 2))
+        # rails
+        rail(10, T2Y, T2X, T2Y, F1)
+        rail(T2X, T2Y, T2X, 9, F1)
+        rail(0, T3Y, T3X, T3Y, F2)
+        rail(T3X, T3Y, T3X, 9, F2)
         return s
 
     def furniture(self, s, name):
@@ -3357,124 +3441,114 @@ class Party:
         dark = (96, 96, 126)
         if name == "kitchen":
             box(s, *b, dark, top=(150, 150, 172))
-            for x in range(8, 58, 10):
-                wall_rect(s, shade(dark, 0.84), "y", x, x + 8.5, 1.5, 12, shade(dark, 0.5), 10)
-            px, py = P(40, 5, 14)
+            for x in range(8, 48, 10):
+                wall_rect(s, shade(dark, 0.84), "y", x, x + 8.5, 1.5, 12, shade(dark, 0.5), 9)
+            px, py = P(36, 4.5, 14)
             pygame.draw.ellipse(s, (60, 62, 80), (px - 4, py - 1, 9, 3))
             s.fill((200, 206, 216), (px + 4, py - 5, 1, 4))
         elif name == "fridge":
-            box(s, *b, (96, 100, 124))
-            pygame.draw.line(s, (40, 40, 60), P(60, 11, 19), P(72, 11, 19))
-            wall_rect(s, (124, 130, 156), "y", 61, 64, 2, 29, None, 11)
+            box(s, *b, (124, 128, 156))
+            pygame.draw.line(s, (40, 40, 60), P(52, 10, 19), P(62, 10, 19))
+            wall_rect(s, (150, 156, 184), "y", 53, 56, 2, 29, None, 10)
         elif name == "island":
             box(s, *b, dark, top=(176, 120, 78))
-            wall_rect(s, shade(dark, 1.2), "y", 15, 57, 12, 14, None, 30)
-            for x, c in ((18, (120, 200, 140)), (21, (230, 180, 80)), (25, (200, 90, 80)), (46, (120, 170, 230)), (50, (230, 180, 80))):
-                px, py = P(x, 24, 15)
+            wall_rect(s, shade(dark, 1.2), "y", 11, 49, 12, 14, None, 27)
+            for x, c in ((14, (120, 200, 140)), (17, (230, 180, 80)), (21, (200, 90, 80)), (40, (120, 170, 230)), (44, (230, 180, 80))):
+                px, py = P(x, 22, 15)
                 s.fill(c, (px, py - 5, 2, 5))
                 s.fill(shade(c, 1.3), (px, py - 5, 1, 2))
                 s.fill((230, 230, 240), (px, py - 6, 1, 1))
-            for x in (32, 38):
-                px, py = P(x, 27, 15)
+            for x in (28, 33):
+                px, py = P(x, 24.5, 15)
                 s.fill((220, 230, 240), (px, py - 3, 2, 3))
         elif name == "stairs":
             for i in range(6):
-                y1 = 98 - i * 6.4
-                box(s, 0, y1 - 6.4, 0, 12, y1, (i + 1) * 6, (78, 78, 104), bands=1)
-        elif name == "console":
-            box(s, *b, (40, 40, 58))
-            for x, c in ((92, (120, 240, 150)), (118, (240, 120, 120))):
-                px, py = P(x, 7, 4)
-                s.fill(c, (px, py, 1, 1))
-            wall_rect(s, (26, 26, 40), "y", 100, 112, 1, 5.5, None, 7)
-        elif name == "table":
-            box(s, *b, (50, 50, 70), top=(120, 120, 144), bands=1)
-            px, py = P(104, 24, 5)
+                y1 = 78 - i * 4.34
+                box(s, 0, y1 - 4.34, 0, 10, y1, (i + 1) * 6, (104, 104, 134), bands=1)
+        elif name in ("table", "table2"):
+            box(s, *b, (70, 70, 94), top=(130, 130, 154), bands=1)
+            px, py = P((b[0] + b[3]) / 2 - 3, (b[1] + b[4]) / 2, b[5])
             pygame.draw.ellipse(s, (230, 190, 90), (px - 3, py - 2, 7, 3))
-            px, py = P(111, 23, 5)
-            s.fill((200, 80, 70), (px, py - 3, 2, 3))
-            s.fill((40, 40, 56), (px - 6, py + 1, 4, 2))
-        elif name == "p_seat":
-            box(s, *b, (114, 120, 164), bands=1)
-            for x in (101, 113):
-                pygame.draw.line(s, (54, 56, 84), P(x, 38, 7), P(x, 50, 7))
-        elif name == "p_back":
-            box(s, *b, (106, 112, 154))
-            for x in (101, 113):
-                pygame.draw.line(s, (50, 52, 80), P(x, 54, 2), P(x, 54, 14))
-            wall_rect(s, (226, 130, 60), "y", 91, 98, 5, 14, (150, 80, 40), 54)
+            s.fill((200, 80, 70), (px + 7, py - 3, 2, 3))
+            s.fill((40, 40, 56), (px + 11, py, 4, 2))
+        elif name in ("p_seat", "seat2"):
+            col = (114, 120, 164) if name == "p_seat" else (150, 96, 110)
+            box(s, *b, col, bands=1)
+            for i in (1, 2):
+                x = b[0] + (b[3] - b[0]) * i / 3.0
+                pygame.draw.line(s, shade(col, 0.66), P(x, b[1], b[5]), P(x, b[4], b[5]))
+        elif name in ("p_back", "back2"):
+            col = (106, 112, 154) if name == "p_back" else (140, 88, 104)
+            box(s, *b, col)
+            for i in (1, 2):
+                x = b[0] + (b[3] - b[0]) * i / 3.0
+                pygame.draw.line(s, shade(col, 0.62), P(x, b[4], b[2] + 2), P(x, b[4], b[5] - 1))
+            wall_rect(s, (226, 130, 60), "y", b[0] + 2, b[0] + 8, b[2] + 5, b[2] + 14, (150, 80, 40), b[4])
+        elif name == "bed":
+            pass                                        # painted with the house
         else:
-            box(s, *b, (96, 102, 142))
+            box(s, *b, (96, 102, 142) if name.startswith("p_") else (128, 82, 98))
 
-    def tv(self, surf):
-        """What is on: the match, a video game, or a music channel."""
+    def screen(self, surf, tv, mode):
+        """What is on a television: the match, a video game, or a music channel."""
         t = self.t
-        x0, x1, z0, z1 = 86, 126, 16, 38
-        if self.phase == "tv":
-            c = (60, 150, 80) if self.tv_flash <= 0 or int(t * 12) % 2 else (240, 240, 200)
-            poly(surf, c, P_TV)
-            for x in range(x0, x1, 8):
-                wall_rect(surf, (74, 168, 92), "y", x, x + 4, z0, z1)
-            pygame.draw.line(surf, (230, 240, 230), P(106, 0, z0), P(106, 0, z1))
-            wall_rect(surf, (60, 150, 80), "y", 86, 91, 22, 32, (230, 240, 230))
-            wall_rect(surf, (60, 150, 80), "y", 121, 126, 22, 32, (230, 240, 230))
-            bx, bz = 106 + math.sin(t * 1.3) * 15, 27 + math.sin(t * 2.9) * 7
-            surf.fill(WHITE, (*P(bx, 0, bz), 2, 2))
+        x0, x1, z0, z1 = tv
+        w_, h_ = x1 - x0, z1 - z0
+        cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+
+        def R(col, a, b, c, d, out=None):
+            wall_rect(surf, col, "y", a, b, c, d, out)
+        if mode == "match":
+            R((60, 150, 80) if self.tv_flash <= 0 or int(t * 12) % 2 else (240, 240, 200), x0, x1, z0, z1)
+            for i in range(0, int(w_), 6):
+                R((74, 168, 92), x0 + i, x0 + i + 3, z0, z1)
+            pygame.draw.line(surf, (230, 240, 230), P(cx, 0, z0), P(cx, 0, z1))
+            R((60, 150, 80), x0, x0 + 3, cz - 4, cz + 4, (230, 240, 230))
+            R((60, 150, 80), x1 - 3, x1, cz - 4, cz + 4, (230, 240, 230))
+            surf.fill(WHITE, (*P(cx + math.sin(t * 1.3) * w_ * 0.38, 0, cz + math.sin(t * 2.9) * h_ * 0.3), 2, 2))
             for i in range(6):
-                px, py = P(106 + math.sin(t * 0.7 + i * 1.9) * 16, 0, 27 + math.cos(t * 0.9 + i * 2.3) * 8)
+                px, py = P(cx + math.sin(t * 0.7 + i * 1.9) * w_ * 0.4, 0, cz + math.cos(t * 0.9 + i * 2.3) * h_ * 0.34)
                 surf.fill((230, 70, 70) if i % 2 else (70, 110, 230), (px, py - 1, 1, 2))
-        elif self.phase == "games":
-            poly(surf, (30, 24, 60), P_TV)
-            for i in range(5):
-                wall_rect(surf, (60, 44, 110), "y", x0 + i * 8 + (t * 6) % 8, x0 + i * 8 + (t * 6) % 8 + 3, z0, z0 + 4)
+        elif mode == "game":
+            R((30, 24, 60), x0, x1, z0, z1)
             for i, c in enumerate(((90, 220, 240), (250, 120, 200), (250, 220, 90), (120, 240, 140))):
-                kx = 92 + i * 9 + math.sin(t * 3 + i) * 3
-                kz = 21 + abs(math.sin(t * 5 + i * 1.7)) * 9
-                wall_rect(surf, c, "y", kx, kx + 3, kz, kz + 4)
-            wall_rect(surf, (250, 220, 90), "y", 88, 88 + 10 + math.sin(t) * 6, 35, 36.5)
-            wall_rect(surf, (250, 120, 200), "y", 124 - 10 - math.cos(t) * 6, 124, 35, 36.5)
+                kx = x0 + 3 + i * (w_ - 8) / 4.0 + math.sin(t * 3 + i) * 2
+                kz = z0 + 3 + abs(math.sin(t * 5 + i * 1.7)) * (h_ - 10)
+                R(c, kx, kx + 3, kz, kz + 4)
+            R((250, 220, 90), x0 + 1, x0 + 6 + math.sin(t) * 3, z1 - 3, z1 - 1.5)
+            R((250, 120, 200), x1 - 6 - math.cos(t) * 3, x1 - 1, z1 - 3, z1 - 1.5)
         else:
-            poly(surf, (24, 30, 56), P_TV)
-            for i in range(10):
-                h = 3 + abs(math.sin(t * 4 + i * 1.3)) * 14
-                wall_rect(surf, mix((255, 150, 70), (120, 90, 230), i / 9.0), "y", 88 + i * 3.8, 90.6 + i * 3.8, 18, 18 + h)
+            R((24, 30, 56), x0, x1, z0, z1)
+            for i in range(7):
+                h = 2 + abs(math.sin(t * 4 + i * 1.3)) * (h_ - 5)
+                a = x0 + 1.5 + i * (w_ - 3) / 7.0
+                R(mix((255, 150, 70), (120, 90, 230), i / 6.0), a, a + (w_ - 3) / 9.0, z0 + 1, z0 + 1 + h)
 
-    def tv_light(self):
-        if self.phase == "tv":
-            return 3 if self.tv_flash > 0 and int(self.t * 12) % 2 else 0
-        return 1 + int(self.t * 3) % 2 if self.phase == "games" else 4
+    def modes(self):
+        return ("match" if self.phase == "tv" else "music", "game" if self.phase == "games" else "music")
 
-    def relight(self, flick, tvl):
+    def relight(self, flick, lights, heads):
         amb = (84, 88, 134)
         if flick:
             amb = shade(amb, 0.8)
         lm, fx = self.lm, self.fx
         self.mask.to_surface(lm, setcolor=amb, unsetcolor=WHITE)
-        pygame.draw.polygon(lm, shade(amb, 1.5), TERRACE)
-        pygame.draw.polygon(lm, amb, HULL)
         fx.fill((0, 0, 0))
-        pygame.draw.polygon(lm, WHITE, P_TV)
         if not flick:
-            for y0, y1 in P_WINDOWS:
-                wall_rect(lm, WHITE, "x", y0, y1, 8, 30)
-                add_light(lm, P(18, (y0 + y1) / 2, 4), 66, 32, (200, 126, 58))
-                add_glow(fx, P(0, (y0 + y1) / 2, 19), 20, (70, 40, 14))
-            for y0, y1 in P_DOORS_UP:
-                wall_rect(lm, WHITE, "x", y0, y1, 38, 56)
-                add_glow(fx, P(0, (y0 + y1) / 2, 47), 16, (64, 36, 12))
-                add_light(lm, P(6, (y0 + y1) / 2, 38), 20, 12, (130, 80, 36))
-            wall_rect(lm, WHITE, "y", 8, 56, 15, 27)
-            add_light(lm, P(32, 14, 8), 74, 32, (204, 132, 60))
-            add_glow(fx, P(32, 0, 21), 22, (70, 40, 14))
-            wall_rect(lm, WHITE, "y", 142, 144, 6, 26)
-            for i, (x, y) in enumerate(P_PENDANTS):
-                bx, by = x + self.lamp_d[0], y + self.lamp_d[1]
-                add_light(lm, P(bx, by, 0 if i == 3 else 15), 54, 22, (176, 124, 66))
-                add_light(lm, P(bx, by, 34), 34, 28, (150, 104, 54))
-                add_glow(fx, P(bx, by, 38), 9, (110, 76, 36))
-        c = ((64, 156, 88), (84, 156, 196), (186, 100, 176), (196, 196, 156), (156, 100, 136))[tvl]
-        add_light(lm, P(106, 24, 4), 88, 48, c)
-        add_glow(fx, P(106, 2, 27), 26, shade(c, 0.45))
+            for pts, pool, mid in self.glows:
+                pygame.draw.polygon(lm, WHITE, pts)
+                add_light(lm, P(*pool), 52, 24, (190, 120, 56))
+                add_glow(fx, mid, 16, (64, 38, 14))
+            for (x, y, top, bz), (bx, by) in zip(P_PENDANTS, heads):
+                add_light(lm, (bx, by + 14), 40, 22, (170, 120, 64))
+                add_glow(fx, (bx, by + 2), 8, (110, 76, 36))
+        cols = {"match": (64, 156, 88), "flash": (196, 196, 156), "game": (150, 100, 190), "game2": (84, 156, 196),
+                "music": (130, 90, 130)}
+        for tv, kind, at in ((self.tv0, lights[0], P(84, 22, 3)), (self.tv1, lights[1], P(27, 20, F1 + 3))):
+            x0, x1, z0, z1 = tv
+            pygame.draw.polygon(lm, WHITE, [P(x0, 0, z0), P(x1, 0, z0), P(x1, 0, z1), P(x0, 0, z1)])
+            add_light(lm, at, 62, 34, cols[kind])
+            add_glow(fx, P((x0 + x1) / 2, 2, (z0 + z1) / 2), 20, shade(cols[kind], 0.4))
 
     def draw(self, surf):
         w, t = self.w, self.t
@@ -3487,43 +3561,50 @@ class Party:
             w.sky.blit(w.back[1], (0, 0))
         surf.blit(w.sky, (0, 0))
         surf.blit(self.room, (0, 0))
-        self.tv(surf)
+        m0, m1 = self.modes()
+        self.screen(surf, self.tv0, m0)
+        self.screen(surf, self.tv1, m1)
         flick = bool(w.dark_now)
-        slots = [[] for _ in range(len(P_ORDER) + 1)]
+        tiers = ([], [], [])
         for p in self.people:
-            if not p.visible:
-                continue
-
-            def fn(s, p=p):
-                if abs(p.z) < 1.5 and p.pose not in ("sit",):
-                    cast_shadow(s, P(p.x, p.y, 0), 3, -1, 11)
-                p.draw(s)
-            for i, n in enumerate(P_ORDER):
-                b = P_BOXES[n]
-                if p.z < b[5] - 0.5 and (p.x < b[0] or p.y < b[1]) and p.x <= b[3] + 30 and p.y <= b[4] + 30:
-                    slots[i].append((p.x + p.y, p.z, id(p), fn))
-                    break
-            else:
-                slots[-1].append((p.x + p.y, p.z, id(p), fn))
-        for i, n in enumerate(P_ORDER):
-            for e in sorted(slots[i], key=lambda e: e[:3]):
+            if p.visible:
+                tiers[0 if p.z < F1 - 6 else (1 if p.z < F2 - 6 else 2)].append(p)
+        for boxes, people, overlay in ((P_T0, tiers[0], False), (P_T1, tiers[1], True), (P_T2, tiers[2], True)):
+            slots = [[] for _ in range(len(boxes) + 1)]
+            for p in people:
+                def fn(s, p=p):
+                    f, fz = floor_at(p.x, p.y, p.z)
+                    if abs(p.z - fz) < 1.5 and p.pose != "sit":
+                        cast_shadow(s, P(p.x, p.y, fz), 3, -1, 11)
+                    p.draw(s)
+                for i, (n, b) in enumerate(boxes):
+                    if p.z < b[5] - 0.5 and (p.x < b[0] or p.y < b[1]) and p.x <= b[3] + 30 and p.y <= b[4] + 30:
+                        slots[i].append((p.x + p.y, p.z, id(p), fn))
+                        break
+                else:
+                    slots[-1].append((p.x + p.y, p.z, id(p), fn))
+            for i, (n, b) in enumerate(boxes):
+                for e in sorted(slots[i], key=lambda e: e[:3]):
+                    e[3](surf)
+                if n != "bed":
+                    piece, at = w.sprite("party2_" + n, lambda s, n=n: self.furniture(s, n))
+                    surf.blit(piece, at)
+            for e in sorted(slots[-1], key=lambda e: e[:3]):
                 e[3](surf)
-            piece, at = w.sprite("party_" + n, lambda s, n=n: self.furniture(s, n))
-            surf.blit(piece, at)
-        for e in sorted(slots[-1], key=lambda e: e[:3]):
-            e[3](surf)
-        # pendant lamps over the bar and the lounge
+        surf.blit(self.rails, (0, 0))
+        # pendant lamps under each floor
         heads = []
-        for x, y in P_PENDANTS:
-            bx, by = P(x + self.lamp_d[0], y + self.lamp_d[1], 40)
-            pygame.draw.line(surf, (30, 28, 44), P(x, y, RH), (bx, by))
+        for x, y, top, bz in P_PENDANTS:
+            bx, by = P(x + self.lamp_d[0], y + self.lamp_d[1], bz)
+            pygame.draw.line(surf, (30, 28, 44), P(x, y, top), (bx, by))
             poly(surf, (48, 48, 68), [(bx - 2, by - 3), (bx + 2, by - 3), (bx + 4, by + 1), (bx - 4, by + 1)], (24, 22, 36))
             heads.append((bx, by))
-        tvl = self.tv_light()
-        key = (flick, tvl, tuple(heads))
+        l0 = "flash" if (m0 == "match" and self.tv_flash > 0 and int(t * 12) % 2) else m0
+        l1 = ("game2" if int(t * 3) % 2 else "game") if m1 == "game" else m1
+        key = (flick, l0, l1, tuple(heads))
         if key != self.lit_key:
             self.lit_key = key
-            self.relight(flick, tvl)
+            self.relight(flick, (l0, l1), heads)
         surf.blit(self.lm, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
         if not flick:
             surf.blit(self.emis, (0, 0))
