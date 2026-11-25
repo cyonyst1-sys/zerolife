@@ -116,10 +116,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/zerolife_0.7.0-1_all.deb` over and install it:
+Copy `dist/zerolife_0.7.1-1_all.deb` over and install it:
 
-    scp dist/zerolife_0.7.0-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.7.0-1_all.deb
+    scp dist/zerolife_0.7.1-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.7.1-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Zero Life" appears on the home screen. To run it from a shell instead:

@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -946,6 +946,7 @@ class Man:
         self.knocked = False
         self.place_t = 140.0     # until he next drives somewhere
         self.kin_t = 200.0       # until he next thinks of his family and friends
+        self.evening = 0.0       # seconds of his evening left after work, before he will think of bed
         self.w = world
         self.x, self.y, self.z = 88.0, 30.0, 0.0
         self.level = "floor"
@@ -1173,11 +1174,11 @@ class Man:
         self.pose = "lie"
         self.sleeping = True
         w.lights_off = True
-        t = random.uniform(50, 75)
-        while t > 0:
+        t = random.uniform(30, 40)                      # a proper night: until he is rested, and no longer
+        while t > 0 or self.need["rest"] < 97:
             t -= self.dt
             self.hurt = max(0.0, self.hurt - 2 * self.dt)
-            self.need["rest"] = min(100, self.need["rest"] + 1.8 * self.dt)
+            self.need["rest"] = min(100, self.need["rest"] + 2.2 * self.dt)
             yield
         self.wake()
         self.say(random.choice(["GOOD MORNING", "*YAWN*", "FIVE MORE MINUTES..."]))
@@ -1205,10 +1206,11 @@ class Man:
         yield from self.trip(lambda: Drive(self.w, "WORK"))
         yield from self.trip(lambda: Place(self.w, "office"))
         yield from self.trip(lambda: Drive(self.w, "", True))
-        self.need["rest"] -= 18
+        self.need["rest"] -= 6
         self.need["wash"] = min(self.need["wash"], 22)
         self.need["food"] -= 12
         yield from self.come_back()
+        self.evening = 240.0                            # the evening is his: no bed until he has enjoyed the place
         self.say("WHAT HAPPENED HERE?!" if self.w.broke_away else random.choice(["LONG DAY...", "I'M HOME"]))
         yield from self.wait(1.4)
         yield from self.act_shower()
@@ -1257,7 +1259,7 @@ class Man:
         self.w.life.folk.partied()
         yield from self.trip(lambda: Drive(self.w, "", True))
         self.need["food"] = min(100, self.need["food"] + 20)
-        self.need["rest"] -= 14
+        self.need["rest"] -= 5
         yield from self.come_back()
         self.say("WHAT HAPPENED HERE?!" if self.w.broke_away else random.choice(["GOOD NIGHT OUT", "HOME AGAIN"]))
         yield from self.wait(1.4)
@@ -1618,6 +1620,10 @@ class Man:
         if w.cracks and w.calm > 8 and random.random() < 0.4:
             return self.act_patch()
         low = min(self.need, key=self.need.get)
+        if low == "rest" and self.evening > 0 and self.need["rest"] > 8:
+            low = min((k for k in self.need if k != "rest"), key=self.need.get)
+        if self.need["rest"] < 30 and self.evening <= 0 and self.need[low] > 12:
+            low = "rest"                                # tired comes first, unless something is urgent
         if self.need[low] < 30:
             room = w.life.house.room_for(low)           # a room of his own that does the job, if he has one
             if room and w.level() and random.random() < 0.7:
@@ -1631,15 +1637,17 @@ class Man:
         if w.tank_level < 0.45:
             return self.act_fish()
         if self.work_t <= 0:
+            if self.need["rest"] < 50:                  # a night's sleep before work, so the evening after is his
+                return self.act_sleep()
             return self.act_work()
-        if self.kin_t <= 0 and w.level() and self.need["rest"] > 35:
+        if self.kin_t <= 0 and self.evening <= 0 and w.level() and self.need["rest"] > 35:
             who = w.life.folk.needy()
             self.kin_t = random.uniform(240, 330) if w.life.folk.want else random.uniform(420, 600)                   # left alone, he still remembers his people
             if who:
                 return self.act_errand("visit", who)
-        if self.visit_t <= 0 and w.level() and self.need["rest"] > 35:
+        if self.visit_t <= 0 and self.evening <= 0 and w.level() and self.need["rest"] > 35:
             return self.act_visit()
-        if self.place_t <= 0 and w.level() and self.need["rest"] > 35:
+        if self.place_t <= 0 and self.evening <= 0 and w.level() and self.need["rest"] > 35:
             return self.act_park()
         if self.coins < 15 and w.level() and any(it.state == "broken" for it in w.items.values()):
             self.say("I NEED TO EARN SOME MONEY", 1.8)
@@ -1687,7 +1695,7 @@ class Man:
         self.anim += dt
         self.speech_t -= dt
         self.hop = max(0.0, self.hop - dt)
-        for k, rate in (("food", 0.42), ("rest", 0.34), ("fun", 0.5), ("wash", 0.3)):
+        for k, rate in (("food", 0.42), ("rest", 0.14), ("fun", 0.5), ("wash", 0.3)):
             if not (k == "rest" and self.sleeping):
                 self.need[k] = clamp(self.need[k] - rate * dt, 0, 100)
         self.mood = clamp(self.mood + dt * 0.4, 0, 100)
@@ -1700,6 +1708,7 @@ class Man:
         if not self.away:
             self.place_t -= dt
             self.kin_t -= dt
+            self.evening -= dt
         if w.party:                                     # out at his friend's: the party moves him
             self.need["fun"] = min(100, self.need["fun"] + 4 * dt)
             return
