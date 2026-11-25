@@ -1,7 +1,7 @@
 {
   "app_name": "Zero Life",
   "package_name": "zerolife",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "revision": "1",
   "architecture": "all",
   "maintainer": "cyonyst1-sys <cyonyst1-sys@users.noreply.github.com>",
@@ -9,7 +9,7 @@
   "description": "A little man who lives in your CardputerZero. Tilt and shake his loft.",
   "store": {
     "summary": "A little man lives in your screen. Look after him, or shake his house.",
-    "description": "Zero Life is a pocket housemate. A small man lives in an isometric loft the size of your screen with his dog and his fish: he cooks, watches TV, sleeps, showers, goes to work for his wages, drives to the shop and the park, and spends evenings at a friend's house. The accelerometer is wired into his world. Tilt the device and the fish tank sloshes, the lamp swings, doors fall open and things roll off their shelves. Shake it and the lights flicker, things smash, the plaster cracks and he, the dog and everyone at the party go flying. He mops up, patches the walls, limps about in a bandage and, if you keep it up, marches to the glass with a placard. Tap the case and he comes to see who knocked. Press T and type to him. It has day and night, weather, seasons by the calendar, and sound. Press E for the town: buy businesses and houses, run them kindly or harshly, and answer the choices that land on his mat. His reputation decides what things cost, who will deal with him, whether friends still ask him round, and whether he ends up mayor or kingpin.",
+    "description": "Zero Life is a pocket housemate. A small man lives in an isometric loft the size of your screen with his dog and his fish: he cooks, watches TV, sleeps, showers, goes to work for his wages, drives to the shop and the park, and spends evenings at a friend's house. The accelerometer is wired into his world. Tilt the device and the fish tank sloshes, the lamp swings, doors fall open and things roll off their shelves. Shake it and the lights flicker, things smash, the plaster cracks and he, the dog and everyone at the party go flying. He mops up, patches the walls, limps about in a bandage and, if you keep it up, marches to the glass with a placard. Tap the case and he comes to see who knocked. Press T and type to him. It has day and night, weather, seasons by the calendar, and sound. Press E for the town: buy businesses and houses, run them kindly or harshly, and answer the choices that land on his mat. His reputation decides what things cost, who will deal with him, whether friends still ask him round, and whether he ends up mayor or kingpin. Look after his family and friends, each in a place of their own; get well enough known to meet people who open doors; put people you trust in charge of your businesses. Move up from a studio flat to a mansion, building, furnishing and repainting up to eight rooms he walks through to. V cycles the camera.",
     "categories": [
       "Games"
     ],
@@ -20,7 +20,9 @@
       "store/screenshots/4-night.png",
       "store/screenshots/5-hello.png",
       "store/screenshots/6-friends.png",
-      "store/screenshots/7-empire.png"
+      "store/screenshots/7-empire.png",
+      "store/screenshots/8-people.png",
+      "store/screenshots/9-house.png"
     ],
     "icon": "store/zerolife.png",
     "license": "MIT",

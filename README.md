@@ -47,6 +47,36 @@ bricks through the window, fines, friends who stop asking him round, and a way t
 town over instead. Buy the shop and his groceries are free; buy the office and he is the
 boss; buy Sam's building and how he sets the rent decides how game night greets him.
 
+New in 0.6. **Tab** on the E screen moves between three pages: the town, his people, and
+his house. **V** on the home screen cycles the camera: wide, following him, close up, and
+a dog cam.
+
+*People.* He has family (Mum, Dad, his sister Kim, Grandad) and friends (Sam, Jo, Lia,
+Max), each with a place of their own: a family kitchen, a flat, an allotment, a garage, a
+studio. They ring when they need something (a shelf put back up, the beans watered, a
+player two) and he drives round and does it. Ring them, visit, or send a gift to stay
+close; leave them and they drift, and give up on him if he never comes. People who are
+close do him good turns. Left alone, he still remembers to go and see them now and then.
+
+*Networking.* Every call, visit and party makes him better known, in five steps from shy
+to knowing everybody. Each step introduces a business contact (a banker, a councillor, a
+supplier, a lawyer) with an office to meet them in; once they like him, the bank lends
+more, upgrades cost less, businesses earn more and fines are halved.
+
+*Running the businesses.* Staff and tenants have spirits that follow how the place is run.
+Low spirits mean less income and walkouts. He can go in and help (stock shelves, sit down
+with the team, fix a tenant's boiler), and put a friend or relative in as manager: someone
+close works hard for him, someone he has neglected helps themselves.
+
+*The house.* He starts in a studio flat and can move up to a townhouse, a villa and a
+mansion. Each move refinishes the main room, changes his clothes and his car, and gives
+the house more room slots (1, 3, 5, 8). Ten rooms can be built, improved twice, swapped
+and reordered: dining room, gym, library, home office, games room, garden, garage, spa,
+home cinema, swimming pool. Each is a scene he walks through to and uses, on his own when
+he needs to or when you send him. Every room has three free spots for furniture from the
+shop (plant, rug, side table, armchair, bookcase, statue, arcade cabinet, piano) and walls
+that can be repainted. The main room can wear the finish of any house he has lived in.
+
 The lamp is a real light: each side of the furniture is lit by how squarely it
 faces the bulb, things throw shadows away from it, and all of that swings when
 the lamp swings. The man is a jointed figure 25 pixels tall. His arms and legs
@@ -76,10 +106,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/zerolife_0.5.0-1_all.deb` over and install it:
+Copy `dist/zerolife_0.6.0-1_all.deb` over and install it:
 
-    scp dist/zerolife_0.5.0-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.5.0-1_all.deb
+    scp dist/zerolife_0.6.0-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.6.0-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Zero Life" appears on the home screen. To run it from a shell instead:

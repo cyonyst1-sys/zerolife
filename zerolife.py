@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -678,7 +678,7 @@ def draw_figure(surf, J, view, face, k, outfit, carry, expr, rot=0, legs=True, l
         pygame.draw.line(fig, shade(shirt, 1.14), (hip[0] + 2 * k * f, hip[1] - k), (neck[0] + 2 * k * f, neck[1] + k), k)
         fig.fill(pants, (hip[0] - 2 * k, hip[1] - k, 5 * k, 3 * k))
         fig.fill(shade(pants, 0.6), (hip[0] - 2 * k, hip[1] - k, 5 * k, k))
-        if outfit == "work":
+        if outfit in ("work", "suit", "luxe"):
             fig.fill((200, 44, 44), (neck[0] + 2 * k * f - (k - 1) * (f > 0), neck[1] + k, k, 4 * k))
         elif outfit == "pj":
             for d in (2, 5):
@@ -718,7 +718,7 @@ def draw_figure(surf, J, view, face, k, outfit, carry, expr, rot=0, legs=True, l
             for d in (2, 5):
                 pygame.draw.line(fig, shade(shirt, 0.7), (neck[0] - 3 * k, neck[1] + d * k), (neck[0] + 3 * k, neck[1] + d * k), k)
         if view == "front":
-            if outfit == "work":
+            if outfit in ("work", "suit", "luxe"):
                 fig.fill((250, 250, 255), (neck[0] - k, neck[1], 3 * k, k))
                 fig.fill((200, 44, 44), (neck[0], neck[1] + k, k, 5 * k))
             elif outfit == "home":
@@ -945,6 +945,7 @@ class Man:
         self.sign = None         # what his placard says, when he is holding one
         self.knocked = False
         self.place_t = 140.0     # until he next drives somewhere
+        self.kin_t = 200.0       # until he next thinks of his family and friends
         self.w = world
         self.x, self.y, self.z = 88.0, 30.0, 0.0
         self.level = "floor"
@@ -1181,7 +1182,7 @@ class Man:
         self.wake()
         self.say(random.choice(["GOOD MORNING", "*YAWN*", "FIVE MORE MINUTES..."]))
         yield from self.wait(1.2)
-        yield from self.bath(2.5, "home")
+        yield from self.bath(2.5, self.w.life.house.wear())
 
     def wake(self):
         self.sleeping = False
@@ -1192,7 +1193,7 @@ class Man:
 
     def act_shower(self):
         self.say(random.choice(["SHOWER TIME", "I STINK"]), 1.6)
-        yield from self.bath(15, "home")
+        yield from self.bath(15, self.w.life.house.wear())
         self.need["wash"] = 100
         self.say("FRESH!", 1.6)
 
@@ -1253,6 +1254,7 @@ class Man:
         yield from self.leave()
         yield from self.trip(lambda: Drive(self.w, "SAM'S"))
         yield from self.trip(lambda: Party(self.w))
+        self.w.life.folk.partied()
         yield from self.trip(lambda: Drive(self.w, "", True))
         self.need["food"] = min(100, self.need["food"] + 20)
         self.need["rest"] -= 14
@@ -1313,6 +1315,38 @@ class Man:
         self.mood = min(100, self.mood + 8)
         self.say(random.choice(["THAT'S ENOUGH FOR NOW", "GOOD GAME", "YOU WIN, BOY"]), 1.6)
         yield from self.wait(1.0)
+
+    def act_errand(self, what, key):
+        """Round to see someone, or in to one of his own places, and do what needs doing there."""
+        w = self.w
+        F = w.life.folk
+        if what == "visit" and key == "sam":
+            yield from self.act_visit()
+            return
+        kind, label = F.where(what, key)
+        if what == "manage":
+            self.say(random.choice(["I'LL LOOK IN ON %s" % label, "TIME TO SHOW MY FACE AT WORK"]), 2.0)
+        elif key in F.want:
+            self.say("%s NEEDS ME. ON MY WAY!" % PERSON[key]["name"], 2.0)
+        else:
+            self.say(random.choice(["I SHOULD SEE %s", "I'LL POP ROUND TO %s"]) % PERSON[key]["name"], 2.0)
+        yield from self.wait(1.8)
+        yield from self.leave()
+        yield from self.trip(lambda: Drive(w, label))
+        yield from self.trip(lambda: Place(w, kind, False, (what, key)))
+        yield from self.trip(lambda: Drive(w, "", True))
+        yield from self.come_back()
+        self.say("WHAT HAPPENED HERE?!" if w.broke_away else random.choice(["GLAD I WENT", "THAT WAS GOOD", "HOME AGAIN"]))
+        yield from self.wait(1.4)
+
+    def act_room(self, kind):
+        """Through to one of the other rooms of his house."""
+        self.say(random.choice(["I'LL BE IN THE %s", "OFF TO THE %s", "TIME FOR THE %s"]) % ROOMS[kind]["name"], 1.8)
+        yield from self.wait(1.4)
+        yield from self.leave()
+        yield from self.trip(lambda: Place(self.w, kind, False, ("room", kind)))
+        yield from self.come_back()
+        yield from self.wait(0.6)
 
     def act_deal(self, sid):
         """He has bought something: off to sign for it."""
@@ -1432,6 +1466,9 @@ class Man:
             self.script = self.act_store()
         elif has("WORK", "OFFICE", "JOB"):
             self.script = self.act_work()
+        elif any(has(p["name"]) for p in PEOPLE if p["kin"] != "contact" and p["id"] != "sam") or has("FAMILY", "MOTHER", "FATHER", "SISTER"):
+            who = next((p["id"] for p in PEOPLE if p["kin"] != "contact" and has(p["name"])), "kim" if has("SISTER") else "dad" if has("FATHER") else "mum")
+            self.script = self.act_errand("visit", who)
         elif has("PARTY", "FRIEND", "SAM"):
             self.script = self.act_visit()
         elif has("DANCE", "JUMP"):
@@ -1565,6 +1602,9 @@ class Man:
             return self.act_patch()
         low = min(self.need, key=self.need.get)
         if self.need[low] < 30:
+            room = w.life.house.room_for(low)           # a room of his own that does the job, if he has one
+            if room and w.level() and random.random() < 0.7:
+                return self.act_room(room)
             return {"food": self.act_eat, "rest": self.act_sleep, "fun": self.act_tv, "wash": self.act_shower}[low]()
         if self.tidy_t <= 0 and w.calm > 6:
             for it in w.items.values():
@@ -1575,6 +1615,11 @@ class Man:
             return self.act_fish()
         if self.work_t <= 0:
             return self.act_work()
+        if self.kin_t <= 0 and w.level() and self.need["rest"] > 35:
+            who = w.life.folk.needy()
+            self.kin_t = random.uniform(240, 330) if w.life.folk.want else random.uniform(420, 600)                   # left alone, he still remembers his people
+            if who:
+                return self.act_errand("visit", who)
         if self.visit_t <= 0 and w.level() and self.need["rest"] > 35:
             return self.act_visit()
         if self.place_t <= 0 and w.level() and self.need["rest"] > 35:
@@ -1584,7 +1629,8 @@ class Man:
             return self.act_work()
         broken = [n for n, it in w.items.items() if it.state == "broken"] + ([] if w.lamp_ok else ["lamp"])
         opts = [(self.act_dog, 2.2 if (w.dog.visible and not w.dog.body) else 0.0), (self.act_wander, 3.0), (self.act_tap, 2.0), (self.act_fish, 1.2), (self.act_tv, 1.2),
-                (self.act_window, 0.8), (self.act_play, 1.0), (self.act_muse, 0.9)]
+                (self.act_window, 0.8), (self.act_play, 1.0), (self.act_muse, 0.9),
+                (lambda: self.act_room(random.choice(w.life.house.built())), 2.0 if (w.life.house.built() and w.level()) else 0.0)]
         if self.need["food"] < 70:
             opts.append((self.act_eat, 1.0))
         r = random.uniform(0, sum(wt for _, wt in opts) + (2.5 if broken else 0))
@@ -1636,6 +1682,7 @@ class Man:
         self.grudge = max(0.0, self.grudge - dt / 40.0)
         if not self.away:
             self.place_t -= dt
+            self.kin_t -= dt
         if w.party:                                     # out at his friend's: the party moves him
             self.need["fun"] = min(100, self.need["fun"] + 4 * dt)
             return
@@ -1931,9 +1978,15 @@ class Man:
 # --------------------------------------------------------------------------
 # the world
 # --------------------------------------------------------------------------
+CAMS = (('WIDE', 1.0, 'room'), ('FOLLOW HIM', 1.5, 'man'), ('CLOSE UP', 2.2, 'man'), ('DOG CAM', 2.0, 'dog'))
+
+
 class World:
     def __init__(self, saved=None):
         self.t = 0.0
+        self.cam, self.zoom, self.cam_at = 0, 1.0, [W / 2.0, H / 2.0]     # which camera, and where it has got to
+        self.view = (0.0, 0.0, 1.0)          # the corner of the scene on screen, and the magnification
+        self.zbuf = pygame.Surface((W, H))
         self.g = (0.0, 0.0, -1.0)
         self.jerk = (0.0, 0.0, 0.0)
         self.shake = 0.0
@@ -2106,6 +2159,8 @@ class World:
     def update(self, dt, g, jerk):
         self.t += dt
         self.life.update(dt)
+        if self.life.house.due and not self.party:
+            self.life.house.restyle()
         self.rate = math.sqrt(sum((g[i] - self.g[i]) ** 2 for i in range(3))) / max(dt, 1e-3)
         self.g, self.jerk = g, jerk
         jm = math.sqrt(jerk[0] ** 2 + jerk[1] ** 2 + jerk[2] ** 2)
@@ -3312,6 +3367,40 @@ class World:
         else:
             self.draw_home(surf)
         self.ui(surf)
+        # the camera: wide, or closed in on him (or the dog) and following
+        name, want, who = CAMS[self.cam]
+        m, focus = self.man, None
+        if who == "dog" and self.dog.visible and (not self.party or getattr(self.party, "dog", None)):
+            focus = P(self.dog.x, self.dog.y, self.dog.z + 4)
+        elif who != "room" and m.visible:
+            focus = m.head() if m.pose in ("lie", "rag") else P(m.x, m.y, m.z + 10)
+        if focus is None:
+            want, focus = 1.0, (W / 2.0, H / 2.0)
+        self.zoom = lerp(self.zoom, want, 0.15)
+        self.cam_at = [lerp(self.cam_at[0], focus[0], 0.12), lerp(self.cam_at[1], focus[1], 0.12)]
+        if self.zoom > 1.02:
+            sw, sh = int(W / self.zoom), int(H / self.zoom)
+            ox = int(clamp(self.cam_at[0] - sw / 2, 0, W - sw))
+            oy = int(clamp(self.cam_at[1] - sh / 2, 0, H - sh))
+            pygame.transform.scale(surf.subsurface((ox, oy, sw, sh)), (W, H), self.zbuf)
+            surf.blit(self.zbuf, (0, 0))
+            self.view = (ox, oy, W / float(sw))
+        else:
+            self.view = (0.0, 0.0, 1.0)
+        self.hud(surf)
+
+    def to_scene(self, x, y):
+        """A point on the screen, as a point in the picture the camera is looking at."""
+        ox, oy, z = self.view
+        return ox + x / z, oy + y / z
+
+    def to_screen(self, x, y):
+        ox, oy, z = self.view
+        return (x - ox) * z, (y - oy) * z
+
+    def next_cam(self):
+        self.cam = (self.cam + 1) % len(CAMS)
+        self.life.toast, self.life.toast_t = "CAMERA: " + CAMS[self.cam][0], 2.0
 
     def draw_home(self, surf):
         t = self.t
@@ -3584,6 +3673,8 @@ class World:
         if not self.party and self.dog.visible and self.dog.speech_t > 0:
             draw_bubble(surf, self.dog.speech, *P(self.dog.x, self.dog.y, self.dog.z + 12))
 
+    def hud(self, surf):
+        m = self.man
         # needs, top-left corner
         pygame.draw.rect(surf, (20, 20, 44), (2, 2, 36, 35 if m.away else 33), border_radius=2)
         text(surf, "$%d" % m.coins, 4, 28, (250, 214, 110))
@@ -4376,10 +4467,10 @@ class Drive:
         # the car
         cx, cy = 160, 134 + int(math.sin(t * 22) * 1)
         body = [(-26, 0), (-26, -9), (-16, -10), (-9, -19), (9, -19), (17, -10), (26, -8), (26, 0)]
-        pygame.draw.polygon(surf, (206, 70, 60), [(cx + x * d, cy + y) for x, y in body])
+        pygame.draw.polygon(surf, HOMES[w.life.house.tier][4], [(cx + x * d, cy + y) for x, y in body])
         pygame.draw.polygon(surf, OUTLINE, [(cx + x * d, cy + y) for x, y in body], 1)
         pygame.draw.polygon(surf, (150, 200, 230), [(cx + x * d, cy + y) for x, y in ((-8, -17), (8, -17), (14, -10), (-14, -10))])
-        surf.fill(shade((206, 70, 60), 0.7), (cx - 26, cy - 4, 52, 2))
+        surf.fill(shade(HOMES[w.life.house.tier][4], 0.7), (cx - 26, cy - 4, 52, 2))
         hs = head_sprite("side", d, "ok")
         surf.blit(hs, (cx + 3 * d - hs.get_width() // 2, cy - 19))
         if self.dog:
@@ -4420,12 +4511,26 @@ PLACES = {
 
 
 class Place:
-    def __init__(self, world, kind, dog=False):
+    def __init__(self, world, kind, dog=False, job=None):
         global SOLIDS
         set_view(PLACE_VIEW)
+        self.job, self.hosts = job, {}
         w = self.w = world
         self.kind, self.cfg = kind, PLACES[kind]
         self.props = self.cfg["props"]
+        if job and job[0] == "room":                    # his own rooms get finer as he improves them
+            hs = world.life.house
+            self.cfg = dict(self.cfg)
+            if kind == "garage":
+                self.cfg["tint"] = HOMES[hs.tier][4]
+            rec = hs.record(kind)
+            if self.cfg["wall"] and PAINTS[rec[3]][1]:
+                self.cfg["wall"] = PAINTS[rec[3]][1]
+            self.props = (list(self.props) + ([("plantpot2", (2, 34, 0, 10, 42, 8))] if rec[1] >= 2 else [])
+                          + ([("trophy", (2, 50, 0, 8, 56, 8))] if rec[1] >= 3 else []))
+            for i in (0, 2, 1):
+                if rec[2][i]:
+                    self.props += furni_props(i, rec[2][i])
         SOLIDS = [b for n, b in self.props]
         self.t, self.dt, self.done = 0.0, 0.03, False
         m = w.man
@@ -4438,7 +4543,9 @@ class Place:
             self.dog.x, self.dog.y, self.dog.z, self.dog.visible, self.dog.body = 104.0, 12.0, 0.0, True, None
             self.dog.fetch = True
         self.scripts = [self.run_man()]
-        if kind == "store":
+        if job:
+            self.setup_job()
+        elif kind == "store":
             self.keeper = self.extra(1, 33, 50, "front")
             self.scripts.append(self.browse(self.extra(2, 90, 14, "back")))
             for i, x in enumerate((14, 24, 50, 62, 84, 94)):
@@ -4460,7 +4567,8 @@ class Place:
         self.mask = pygame.mask.from_surface(self.room)
         self.lm = pygame.Surface((W, H))
         self.lit_key = None
-        w.life.greet(self.people[1:], kind)
+        if not job or job[0] == "manage":
+            w.life.greet(self.people[1:], kind)
 
     def extra(self, i, x, y, view):
         g = Man(self.w)
@@ -4505,7 +4613,9 @@ class Place:
 
     def run_man(self):
         m, w = self.w.man, self.w
-        if self.kind == "store":
+        if self.job:
+            yield from self.run_job()
+        elif self.kind == "store":
             m.say(random.choice(["JUST A FEW THINGS", "WHAT DO I NEED...", "SHOPPING TIME"]))
             for x in random.sample([22, 56, 88], 2):
                 yield from self.walk(m, x, 13)
@@ -4574,6 +4684,114 @@ class Place:
             m.say(random.choice(["AHH. PEACE.", "NICE EVENING", "LOOK AT THOSE TREES"]), 2.0)
             yield from self.wait(m, 9.0, "sit", "front", 7.0)
             m.need["fun"] = min(100, m.need["fun"] + 40)
+        yield from self.walk(m, 112, 6)
+        self.done = True
+
+    def setup_job(self):
+        """Who is here when he comes on an errand."""
+        what, key = self.job
+        like = self.cfg.get("like", self.kind)
+        if what == "room":
+            return
+        if what != "manage":
+            for p in PEOPLE:
+                if p["place"] == self.kind:
+                    x, y, view, pose, z = p["spot"]
+                    g = self.extra(0, x, y, view)
+                    g.look, g.pose, g.z = p["look"], pose, z
+                    self.hosts[p["id"]] = g
+        elif like == "office":
+            for i, x in ((0, 21), (3, 97)):
+                c = self.extra(i, x, 33, "back")
+                c.pose, c.z = "sit", 6.0
+        elif like == "store":
+            self.keeper = self.extra(1, 33, 50, "front")
+            self.scripts.append(self.browse(self.extra(2, 90, 14, "back")))
+        else:
+            self.extra(2, 30, 52, "back")
+        boss = self.w.life.folk.mgr.get(key) if what == "manage" else None
+        if boss:                                        # whoever he put in charge is the one who meets him
+            self.people[1].look = PERSON[boss]["look"]
+
+    def run_job(self):
+        what, key = self.job
+        m, L = self.w.man, self.w.life
+        F = L.folk
+        if what == "room":                              # a while in one of his own rooms
+            r = ROOMS[key]
+            x, y, pose, view, z, secs = r["do"]
+            m.carry = r.get("carry")
+            yield from self.walk(m, x, y)
+            yield from self.wait(m, secs * 0.4, pose, view, z)
+            m.say(random.choice(r["says"]), 2.4)
+            if key == "gym":
+                for _ in range(4):
+                    m.hop = 0.35
+                    yield from self.wait(m, 0.9, "stand", "front")
+            yield from self.wait(m, secs * 0.6, pose, view, z)
+            m.carry = None
+            L.house.used(key)
+            yield from self.walk(m, 112, 6)
+            self.done = True
+            return
+        if what == "manage":
+            a, staff = ASSET[key], self.people[1]
+            mo = F.morale.get(key, 60)
+            like = self.cfg.get("like", self.kind)
+            m.say(random.choice(["LET'S SEE HOW WE'RE DOING", "THE BOSS IS IN", "HOW IS EVERYONE?"]))
+            yield from self.wait(m, 1.6)
+            if a["kind"] == "home":
+                yield from self.walk(m, 40, 52)
+                staff.say("THE ROOF LEAKS AND THE RENT IS CRUEL" if mo < 30 else "IT COULD BE WARMER" if mo < 60 else "WE LOVE IT HERE", 2.6)
+                yield from self.wait(m, 2.8, "stand", "side", 0.0, -1)
+                yield from self.walk(m, 26, 13)
+                m.say(random.choice(["LET ME LOOK AT THAT BOILER", "THIS TAP NEEDS A WASHER"]), 2.0)
+                yield from self.wait(m, 5.0, "look", "back")
+            elif like == "office":
+                yield from self.walk(m, 53, 40)
+                m.say(random.choice(["LET'S LOOK AT THE NUMBERS", "WHO NEEDS WHAT?"]), 2.0)
+                yield from self.wait(m, 5.0, "sit", "back", 6.0)
+                staff.say("WE'RE DROWNING HERE" if mo < 30 else "BUSY, BUT FINE" if mo < 60 else "BEST JOB I'VE HAD", 2.6)
+                yield from self.wait(m, 3.0, "sit", "back", 6.0)
+            else:
+                for x in random.sample([16, 24, 32], 2):
+                    yield from self.walk(m, x, 13)
+                    m.say(random.choice(["THESE NEED FACING UP", "I'LL RESTOCK THIS", "WHO PRICED THESE?"]), 1.8)
+                    yield from self.wait(m, 3.5, "look", "back")
+                yield from self.walk(m, 33, 70)
+                staff.say("WE'RE RUN OFF OUR FEET" if mo < 30 else "MUSTN'T GRUMBLE" if mo < 60 else "ALL GOOD, BOSS!", 2.6)
+                yield from self.wait(m, 3.0, "stand", "back")
+            m.say(random.choice(["YOU'RE ALL DOING GREAT", "I'LL SORT THAT OUT", "THANK YOU, ALL OF YOU"]), 2.0)
+            staff.cheer = 1.5
+            yield from self.wait(m, 2.2)
+            F.managed(key)
+        else:
+            p, host = PERSON[key], self.hosts[key]
+            want = F.want.get(key)
+            m.say(("HELLO, %s" if what == "meet" else "HI %s!") % p["name"], 1.8)
+            host.say(random.choice(["THERE YOU ARE!", "OH, THANK GOODNESS"] if want else
+                                   ["COME IN, COME IN", "LOOK WHO IT IS!", "GOOD TO SEE YOU"]), 2.0)
+            yield from self.wait(m, 2.2)
+            if want:
+                _, x, y, pose, view, z, secs, line, carry = p["wants"][want[0]]
+            elif what == "meet":
+                x, y, pose, view, z, secs, line, carry = 53, 40, "sit", "back", 6.0, 7.0, random.choice(
+                    ["HERE'S WHAT I'M THINKING...", "WE COULD HELP EACH OTHER", "TELL ME ABOUT YOUR WORK"]), None
+            else:
+                x, y, pose, view, z, secs, line, carry = clamp(host.x + 12, 6, 114), clamp(host.y + 9, 12, 74), "stand", "side", 0.0, 6.0, \
+                    random.choice(["SO HOW HAVE YOU BEEN?", "TELL ME EVERYTHING", "IT'S BEEN TOO LONG"]), None
+            m.carry = carry
+            yield from self.walk(m, x, y)
+            yield from self.wait(m, secs * 0.4, pose, view, z, -1 if pose == "stand" and not want else None)
+            m.say(line, 2.2)
+            if pose == "look":
+                self.w.spark(m.x, m.y - 4, 12, (255, 240, 170), 6)
+            yield from self.wait(m, secs * 0.6, pose, view, z)
+            m.carry = None
+            host.say(random.choice(THANKS[p["kin"]]), 2.2)
+            host.cheer = 1.2
+            yield from self.wait(m, 2.4, "stand", "side")
+            F.visited(key, what)
         yield from self.walk(m, 112, 6)
         self.done = True
 
@@ -4658,7 +4876,7 @@ class Place:
         s.fill(KEY)
         s.set_colorkey(KEY, pygame.RLEACCEL)
         rnd = random.Random(9)
-        cfg, kind = self.cfg, self.kind
+        cfg, kind = self.cfg, self.cfg.get("like", self.kind)
         ink = (40, 34, 52)
         fl, wl = cfg["floor"], cfg["wall"]
         if kind == "park" and SEASON == "winter":
@@ -4683,14 +4901,19 @@ class Place:
             if kind == "store":
                 wall_rect(s, (200, 60, 60), "x", 14, 66, 28, 37, ink)
                 px, py = P(0, 52, 34)
-                text(s, "SHOP", px + 4, py - 6, (255, 244, 220))
+                text(s, cfg.get("sign", "SHOP"), px + 4, py - 6, (255, 244, 220))
                 for y in range(0, RY, 8):
                     wall_rect(s, shade(wl, 0.92), "x", y, y + 4, 6, 26)
             else:
                 wall_rect(s, (150, 200, 236), "x", 14, 40, 14, 32, ink)            # window
                 pygame.draw.line(s, ink, P(0, 27, 14), P(0, 27, 32))
-                wall_rect(s, (244, 244, 240), "x", 50, 74, 14, 32, ink)            # whiteboard
-                for z, c in ((28, (200, 60, 60)), (24, (60, 110, 200)), (20, (60, 150, 90))):
+                if kind != "office":                                               # a picture
+                    wall_rect(s, (196, 150, 84), "x", 52, 70, 16, 31, ink)
+                    wall_rect(s, cfg.get("tint", (120, 160, 200)), "x", 54, 68, 18, 29)
+                    wall_rect(s, shade(cfg.get("tint", (120, 160, 200)), 1.3), "x", 54, 68, 24, 29)
+                else:
+                    wall_rect(s, (244, 244, 240), "x", 50, 74, 14, 32, ink)        # whiteboard
+                for z, c in (((28, (200, 60, 60)), (24, (60, 110, 200)), (20, (60, 150, 90))) if kind == "office" else ()):
                     pygame.draw.line(s, c, P(0, 53, z), P(0, 53 + rnd.uniform(8, 18), z))
         else:
             for _ in range(500):
@@ -4750,7 +4973,7 @@ class Place:
         elif name == "cooler":
             box(s, x0, y0, 0, x1, y1, 13, (230, 232, 240))
             box(s, x0 + 1, y0 + 1, 13, x1 - 1, y1 - 1, z1, (120, 190, 240), bands=1)
-        elif name == "plantpot":
+        elif name.startswith("plantpot"):
             box(s, *b, (196, 104, 70), bands=1)
             px, py = P((x0 + x1) / 2, (y0 + y1) / 2, z1)
             for dx, dy, r in ((0, -5, 6), (-4, -9, 4), (4, -10, 4), (0, -14, 3)):
@@ -4771,6 +4994,117 @@ class Place:
                 for dx, dy in ((-8, -4), (7, -6), (0, -12), (-3, -8), (5, -2)):
                     pygame.draw.line(s, (110, 76, 56), (px, py + 8), (px + dx, py + dy))
                     s.fill((240, 244, 255), (px + dx - 1, py + dy - 1, 3, 1))
+        elif name.startswith("sofa"):
+            c = self.cfg.get("tint", (150, 70, 80))
+            if name.endswith("b"):
+                box(s, *b, shade(c, 0.92))
+            else:
+                box(s, x0, y0, 0, x0 + 3, y1 + 4, z1 + 4, shade(c, 0.9), bands=1)
+                box(s, x0 + 3, y0, 0, x1 - 3, y1, z1, c, top=shade(c, 1.18), bands=2)
+                box(s, x1 - 3, y0, 0, x1, y1 + 4, z1 + 4, shade(c, 0.9), bands=1)
+        elif name.startswith("table"):
+            for x, y in ((x0 + 1, y1 - 1), (x1 - 1, y1 - 1), (x1 - 1, y0 + 1)):
+                pygame.draw.line(s, (70, 60, 66), P(x, y, 0), P(x, y, z1 - 1.5), 2)
+            box(s, x0, y0, z1 - 1.5, x1, y1, z1, (176, 132, 90), bands=1)
+            for x, y, c in ((x0 + 5, y0 + 4, (244, 240, 230)), (x1 - 6, y1 - 5, (244, 240, 230)), ((x0 + x1) / 2, (y0 + y1) / 2, (220, 90, 80))):
+                px, py = P(x, y, z1)
+                pygame.draw.ellipse(s, c, (px - 3, py - 2, 6, 3))
+        elif name.startswith("bed"):
+            box(s, *b, (230, 230, 240), top=self.cfg.get("tint", (120, 150, 210)), bands=1)
+            box(s, x0 + 2, y0 + 1, z1, x0 + 10, y1 - 1, z1 + 2, (250, 250, 250), bands=1)
+        elif name == "worktop":
+            box(s, *b, (214, 222, 200), top=(240, 238, 230))
+            for x in range(int(x0) + 6, int(x1) - 2, 13):
+                pygame.draw.line(s, (150, 156, 140), P(x, y1, 1), P(x, y1, z1 - 1))
+            px, py = P(x0 + 10, y0 + 4, z1)
+            pygame.draw.ellipse(s, (60, 60, 76), (px - 5, py - 2, 10, 5))
+            px, py = P(x1 - 12, y0 + 4, z1)
+            pygame.draw.ellipse(s, (150, 190, 214), (px - 6, py - 3, 12, 6))
+            wall_rect(s, (190, 150, 110), "y", x0 + 2, x1 - 2, 24, 34, (40, 34, 52))
+        elif name == "tvset":
+            box(s, x0, y0, 0, x1, y1, 7, (110, 80, 60), bands=1)
+            wall_rect(s, (30, 30, 44), "y", x0 + 2, x1 - 2, 9, z1, None, y1)
+            wall_rect(s, (90, 150, 210), "y", x0 + 3, x1 - 3, 10, z1 - 1, None, y1)
+            wall_rect(s, (150, 210, 130), "y", x0 + 3, x1 - 3, 10, 13, None, y1)
+        elif name == "shed":
+            box(s, *b, (150, 104, 70))
+            box(s, x0 - 1, y0 - 1, z1, x1 + 1, y1 + 1, z1 + 2, (90, 70, 74), bands=1)
+            wall_rect(s, (96, 64, 48), "x", y0 + 5, y0 + 12, 0, 15, (40, 34, 52), x1)
+        elif name.startswith("veg"):
+            box(s, *b, (120, 84, 60), top=(86, 62, 50), bands=1)
+            x = x0 + 3
+            while x < x1 - 1:
+                for y in (y0 + 2.5, y1 - 2.5):
+                    px, py = P(x, y, z1)
+                    pygame.draw.circle(s, (70, 150, 80), (px, py - 2), 2)
+                    s.fill(rnd.choice(((120, 200, 112), (230, 90, 70), (240, 170, 60), (120, 200, 112))), (px, py - 3, 1, 1))
+                x += 5
+        elif name == "car":
+            c = self.cfg.get("tint", (200, 60, 50))
+            box(s, x0, y0, 3, x1, y1, 9, c, bands=1)
+            box(s, x0 + 12, y0 + 2, 9, x1 - 12, y1 - 2, z1, (150, 200, 230), top=shade(c, 1.1), bands=1)
+            for x in (x0 + 9, x1 - 9):
+                px, py = P(x, y1, 3)
+                pygame.draw.circle(s, (24, 22, 34), (px, py), 4)
+                pygame.draw.circle(s, (170, 170, 186), (px, py), 1)
+            px, py = P(x1, y1 - 3, 7)
+            s.fill((255, 244, 190), (px - 1, py - 1, 2, 2))
+        elif name == "easel":
+            for x in (x0, x1):
+                pygame.draw.line(s, (120, 84, 56), P(x, y1, 0), P((x0 + x1) / 2, y1, z1), 1)
+            wall_rect(s, (250, 250, 244), "y", x0, x1, 9, z1 - 2, (40, 34, 52), y1)
+            for i in range(7):
+                px, py = P(rnd.uniform(x0 + 1, x1 - 1), y1, rnd.uniform(11, z1 - 4))
+                s.fill(rnd.choice(((220, 80, 70), (90, 170, 220), (240, 200, 80), (120, 200, 130))), (px, py, 2, 2))
+        elif name == "safe":
+            box(s, *b, (120, 126, 144))
+            px, py = P(x1, (y0 + y1) / 2, z1 / 2)
+            pygame.draw.circle(s, (220, 220, 230), (px, py), 3)
+            pygame.draw.circle(s, (60, 60, 76), (px, py), 3, 1)
+        elif name.startswith("crate"):
+            box(s, *b, (176, 136, 88))
+            pygame.draw.line(s, (120, 90, 60), P(x0, y1, z1 / 2), P(x1, y1, z1 / 2))
+            pygame.draw.line(s, (120, 90, 60), P(x1, y1, z1 / 2), P(x1, y0, z1 / 2))
+        elif name == "weights":
+            ym = (y0 + y1) / 2
+            box(s, x0 + 8, y0 + 2, 0, x1 - 8, y1 - 2, 5, (60, 60, 76), top=self.cfg.get("tint", (220, 80, 60)), bands=1)
+            for x in (x0 + 6, x1 - 6):
+                pygame.draw.line(s, (150, 150, 166), P(x, ym, 0), P(x, ym, z1 + 5), 2)
+            pygame.draw.line(s, (200, 200, 214), P(x0, ym, z1 + 5), P(x1, ym, z1 + 5), 1)
+            for x in (x0 + 1, x1 - 1):
+                px, py = P(x, ym, z1 + 5)
+                pygame.draw.circle(s, (40, 40, 54), (px, py), 4)
+                pygame.draw.circle(s, (120, 120, 136), (px, py), 1)
+        elif name in ("tub", "pool"):
+            box(s, *b, (240, 240, 246), top=(236, 236, 242), bands=1)
+            wtr = (120, 200, 230) if name == "tub" else (70, 160, 220)
+            poly(s, wtr, [P(x0 + 2, y0 + 2, z1), P(x1 - 2, y0 + 2, z1), P(x1 - 2, y1 - 2, z1), P(x0 + 2, y1 - 2, z1)])
+            for _ in range(14 if name == "pool" else 5):
+                px, py = P(rnd.uniform(x0 + 5, x1 - 8), rnd.uniform(y0 + 4, y1 - 4), z1)
+                s.fill(shade(wtr, 1.3), (px, py, rnd.choice((3, 5)), 1))
+        elif name.startswith("rug"):
+            c = self.cfg.get("tint", (150, 60, 60))
+            poly(s, shade(c, 0.8), [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], shade(c, 0.5))
+            poly(s, c, [P(x0 + 2, y0 + 2), P(x1 - 2, y0 + 2), P(x1 - 2, y1 - 2), P(x0 + 2, y1 - 2)])
+            poly(s, (240, 214, 150), [P(x0 + 9, y0 + 5), P(x1 - 9, y0 + 5), P(x1 - 9, y1 - 5), P(x0 + 9, y1 - 5)])
+        elif name.startswith("piano"):
+            box(s, *b, (34, 30, 44), top=(54, 50, 66))
+            wall_rect(s, (250, 250, 250), "y", x0 + 2, x1 - 2, z1 - 4, z1 - 1, None, y1)
+            x = x0 + 3
+            while x < x1 - 3:
+                pygame.draw.line(s, (30, 26, 40), P(x, y1, z1 - 3), P(x, y1, z1 - 1))
+                x += 2
+        elif name.startswith("cabinet"):
+            box(s, *b, (60, 70, 150), top=(90, 100, 190))
+            wall_rect(s, (30, 30, 44), "y", x0 + 1, x1 - 1, 11, 18, None, y1)
+            wall_rect(s, (120, 230, 150), "y", x0 + 2, x1 - 2, 12, 17, None, y1)
+            wall_rect(s, (250, 214, 110), "y", x0 + 1, x1 - 1, 19, 21, None, y1)
+        elif name.startswith("trophy"):
+            box(s, *b, (120, 110, 130), bands=1)
+            px, py = P((x0 + x1) / 2, (y0 + y1) / 2, z1)
+            pygame.draw.circle(s, (250, 214, 110), (px, py - 4), 3)
+            s.fill((250, 214, 110), (px - 1, py - 2, 2, 2))
+            s.fill((255, 244, 190), (px - 1, py - 6, 1, 2))
         elif name == "lamp":
             pygame.draw.line(s, (50, 46, 62), P(51, 7, 0), P(51, 7, 28), 2)
             px, py = P(51, 7, 30)
@@ -5072,10 +5406,18 @@ class Life:
         self.tops = {}
         self.scroll = None
         self.t = 0.0
+        self.page = 0                # 0 the town, 1 the people
+        self.folk = Folk(self)
+        self.house = House(self)
 
     # ---- where he stands ----
+    def free(self):
+        """Is he at home with nothing stopping him going out?"""
+        m, w = self.w.man, self.w
+        return not (m.away or w.party or m.sleeping or m.body or m.hidden) and w.level()
+
     def worth(self):
-        return self.w.man.coins + sum(o[2] for o in self.own.values()) - self.debt
+        return self.w.man.coins + sum(o[2] for o in self.own.values()) + self.house.value() - self.debt
 
     def rank(self):
         n = self.worth()
@@ -5096,16 +5438,16 @@ class Life:
         a, o = ASSET[sid], self.own[sid]
         trust = 1 + self.karma / 400.0 * (-1 if a["own"] < 0 else 1)      # people back a good name, and avoid a bad one
         boss = 1.1 if self.crown == "mayor" else 1.25 if self.crown == "kingpin" else 1.0
-        return max(1, int(round(a["pay"] * P_MULT[o[0]] * LVL_MULT[o[1] - 1] * trust * boss)))
+        return max(1, int(round(a["pay"] * P_MULT[o[0]] * LVL_MULT[o[1] - 1] * trust * boss * self.folk.boost(sid))))
 
     def total(self):
         return sum(self.income(s) for s, o in self.own.items() if not o[3])
 
     def up_cost(self, sid):
-        return int(ASSET[sid]["price"] * 0.6 * self.own[sid][1])
+        return int(ASSET[sid]["price"] * 0.6 * self.own[sid][1] * (0.75 if self.folk.perk("rowe") else 1))
 
     def limit(self):
-        return int(100 + max(0, self.worth() + self.debt) * (0.4 if self.karma >= -15 else 0.2)) // 100 * 100
+        return int(100 + max(0, self.worth() + self.debt) * (0.4 if self.karma >= -15 else 0.2) * (1.5 if self.folk.perk("penny") else 1)) // 100 * 100
 
     def gift(self):
         return max(25, self.w.man.coins // 20)
@@ -5150,6 +5492,7 @@ class Life:
     def update(self, dt):
         self.t += dt
         self.toast_t -= dt
+        self.folk.update(dt)
         self.pay_t -= dt
         if self.pay_t <= 0:
             self.pay_t += PAY_EVERY
@@ -5160,7 +5503,7 @@ class Life:
                 self.later.remove(e)
                 _, chance, coins, karma, news = LATER[e[1]]
                 if random.random() < chance:
-                    self.pay(coins)
+                    self.pay(coins // 2 if (coins < 0 and self.folk.perk("lex")) else coins)
                     self.add_karma(karma)
                     self.tell(news)
                     play("coin" if coins > 0 else "knock", 0.3)
@@ -5181,6 +5524,7 @@ class Life:
     def payday(self):
         m = self.w.man
         got = 0
+        self.folk.payday()
         for sid, o in self.own.items():
             a = ASSET[sid]
             self.add_karma(P_KARMA[o[0]] + a["own"] * 0.5)
@@ -5188,7 +5532,7 @@ class Life:
                 o[3] = 0
                 continue
             n = self.income(sid)
-            if o[0] == 2 and random.random() < 0.12:
+            if self.folk.walkout(sid):                  # spirits too low: they down tools, or move out
                 o[3] = 1
                 self.tell(("THE STAFF AT %s WALKED OUT." if a["kind"] == "biz" else "THE TENANTS AT %s MOVED OUT.") % the(sid))
             elif o[0] == 0 and random.random() < 0.10:
@@ -5196,7 +5540,7 @@ class Life:
                 self.tell("PEOPLE LOVE %s. A BUMPER WEEK." % the(sid))
             got += n
         if self.debt:
-            self.debt += int(math.ceil(self.debt * (0.10 if self.shark else 0.03)))
+            self.debt += int(math.ceil(self.debt * (0.10 if self.shark else 0.015 if self.folk.perk("penny") else 0.03)))
             back = min(self.debt, int(got * 0.3))
             self.debt -= back
             got -= back
@@ -5236,7 +5580,7 @@ class Life:
             m.say(random.choice(["A BRICK?! WHO THROWS A BRICK?", "THEY KNOW WHERE I LIVE...", "I SUPPOSE I EARNED THAT"]), 3.0)
             self.tell("SOMEBODY PUT A BRICK THROUGH THE WINDOW.")
         elif self.karma <= -60 and r > 0.8 and m.coins > 40:
-            fine = m.coins // 8
+            fine = m.coins // (16 if self.folk.perk("lex") else 8)
             m.coins -= fine
             self.tell("FINED $%d. THE POLICE ARE WATCHING YOU." % fine)
 
@@ -5332,6 +5676,9 @@ class Life:
         elif sid in self.own:
             o, a = self.own[sid], ASSET[sid]
             out.append(("RUN IT: " + POLICY[a["kind"]][o[0]], "policy", True))
+            boss = self.folk.mgr.get(sid)
+            out.append(("MANAGER: " + (PERSON[boss]["name"] if boss else "NOBODY"), "mgr", True))
+            out.append(("GO IN AND HELP" if self.free() else "HE'S BUSY RIGHT NOW", "manage", self.free()))
             if o[1] < 3:
                 out.append(("UPGRADE $%d" % self.up_cost(sid), "up", m.coins >= self.up_cost(sid)))
             out.append((("SURE? ENTER AGAIN" if self.sure == sid else "SELL $%d" % int(o[2] * 0.7)), "sell", True))
@@ -5358,7 +5705,10 @@ class Life:
             o = self.own[sid]
             if o[3]:
                 return ("YOURS, LEVEL %d" % o[1], "CLOSED BY A WALKOUT" if a["kind"] == "biz" else "STANDING EMPTY")
-            return ("YOURS, LEVEL %d, EARNS $%d" % (o[1], self.income(sid)), P_HINT[o[0]])
+            mo = self.folk.morale.get(sid, 60)
+            return ("YOURS, LEVEL %d, EARNS $%d" % (o[1], self.income(sid)),
+                    ("THE STAFF ARE " if a["kind"] == "biz" else "THE TENANTS ARE ")
+                    + ("HAPPY" if mo >= 70 else "GETTING BY" if mo >= 45 else "FED UP" if mo >= 30 else "READY TO WALK"))
         if self.locked(sid):
             return ("NOT FOR SALE TO YOU", ("ONLY FOR A TRUSTED NAME: REPUTATION %d+" % a["need"]) if a["need"] > 0
                     else ("ONLY FOR A SHADY NAME: REPUTATION %d OR LESS" % a["need"]))
@@ -5391,6 +5741,11 @@ class Life:
             m.coins += int(self.own.pop(sid)[2] * 0.7)
             self.tell("YOU SOLD %s." % the(sid))
             play("coin")
+        elif what == "mgr":
+            self.folk.manager_next(sid)
+        elif what == "manage":
+            self.folk.errand = ("manage", sid)
+            return True
         elif what == "borrow":
             self.shark = self.shark or self.karma < -15
             self.debt += 100
@@ -5413,7 +5768,8 @@ class Life:
             play("cheer")
 
     def key(self, pressed):
-        """Keys while the town screen is up.  Returns False once it should close."""
+        """Keys while the screen is up.  Returns False once it should close."""
+        F = self.folk
         for k in pressed:
             if self.card:
                 if k in ("ok", "esc"):
@@ -5427,6 +5783,36 @@ class Life:
                         self.decide(opt)
                 elif k == "esc":
                     return False
+            elif k == "esc":
+                return False
+            elif k == "tab":
+                self.page, self.sure = (self.page + 1) % 3, None
+            elif self.page == 2:                        # the house: left and right through the rooms, up and down what to do
+                H = self.house
+                acts = H.actions()
+                if k in ("left", "right"):
+                    H.sel = (H.sel + (1 if k == "right" else -1)) % 9
+                    H.act = 0
+                elif k in ("up", "down"):
+                    H.act = (H.act + (1 if k == "down" else -1)) % len(acts)
+                elif k == "ok":
+                    label, what, can = acts[H.act % len(acts)]
+                    if can:
+                        if H.do(what):
+                            return False
+                        H.act = min(H.act, len(H.actions()) - 1)
+            elif self.page == 1:                        # people: up and down the list, left and right through what to do
+                pid = PEOPLE[F.sel]["id"]
+                acts = F.actions(pid)
+                if k in ("up", "down"):
+                    F.sel = (F.sel + (1 if k == "down" else -1)) % len(PEOPLE)
+                    F.act = 0
+                elif k in ("left", "right"):
+                    F.act = (F.act + (1 if k == "right" else -1)) % len(acts)
+                elif k == "ok":
+                    label, what, can = acts[F.act % len(acts)]
+                    if can and F.do(pid, what):
+                        return False
             else:
                 acts = self.actions(STREET[self.sel])
                 if k in ("left", "right"):
@@ -5439,20 +5825,19 @@ class Life:
                 elif k == "ok":
                     label, what, can = acts[self.act % len(acts)]
                     if can:
-                        self.do(STREET[self.sel], what)
+                        if self.do(STREET[self.sel], what):
+                            return False
                         self.act = min(self.act, len(self.actions(STREET[self.sel])) - 1)
-                elif k == "esc":
-                    return False
         return True
 
     def close(self):
-        """Back to the flat.  If he bought something he goes to sign for it."""
+        """Back to the flat.  If there is somewhere to be, he sets off."""
         self.open, self.sure = False, None
-        m, w = self.w.man, self.w
-        if self.bought and not (m.away or w.party or m.sleeping or m.body or m.hidden) and w.level():
+        m, F, H = self.w.man, self.folk, self.house
+        if self.free() and (F.errand or self.bought or H.go):
             m.interrupt()
-            m.script = m.act_deal(self.bought)
-        self.bought = None
+            m.script = m.act_errand(*F.errand) if F.errand else m.act_room(H.go) if H.go else m.act_deal(self.bought)
+        self.bought = F.errand = H.go = None
 
     def draw(self, surf):
         w, m = self.w, self.w.man
@@ -5464,45 +5849,22 @@ class Life:
             rnd = random.Random(7)
             for _ in range(40):
                 surf.fill((200, 200, 230), (rnd.randrange(W), rnd.randrange(14, 70), 1, 1))
-        surf.fill((58, 60, 84), (0, 100, W, 6))
-        for x in range(0, W, 12):
-            surf.fill((150, 150, 120), (x - int(self.scroll or 0) % 12, 103, 6, 1))
-        # the street: painted once, until something about it changes
-        key = tuple((s, tuple(self.own[s][:2]) if s in self.own else self.locked(s)) for s in STREET[2:])
-        if key != self.street_key:
-            self.street_key = key
-            if self.street is None:
-                self.street = pygame.Surface((len(STREET) * SLOT, 92))
-                self.street.set_colorkey(KEY)
-            self.street.fill(KEY)
-            for i, s in enumerate(STREET):
-                o = self.own.get(s)
-                self.tops[s] = paint_building(self.street, i * SLOT + SLOT // 2, 86, s, bool(o),
-                                              s not in self.own and ASSET[s]["kind"] != "civic" and self.locked(s),
-                                              o[0] if o else 1, o[1] if o else 0)
-        want = clamp(self.sel * SLOT + SLOT // 2 - W // 2, 0, len(STREET) * SLOT - W)
-        self.scroll = want if self.scroll is None else lerp(self.scroll, want, 0.3)
-        sx = -int(round(self.scroll))
-        surf.blit(self.street, (sx, 14))
-        for i, s in enumerate(STREET):
-            cx = sx + i * SLOT + SLOT // 2
-            if not -SLOT < cx < W + SLOT:
-                continue
-            a = ASSET[s]
-            if a["kind"] != "civic" and s not in self.own:
-                tag = "$%d" % a["price"]
-                text(surf, tag, cx - len(tag) * 2, 14 + self.tops[s] - 8, (250, 214, 110) if m.coins >= a["price"] and not self.locked(s) else (150, 150, 180))
-            if s in self.own and self.own[s][3]:
-                text(surf, "SHUT", cx - 8, 14 + self.tops[s] - 16, (240, 80, 70))
-            if i == self.sel:
-                y = 14 + self.tops[s] - (26 if s in self.own else 18) + int(math.sin(self.t * 6) * 2)
-                pygame.draw.polygon(surf, (255, 255, 255), [(cx - 4, y), (cx + 4, y), (cx, y + 5)])
-                pygame.draw.polygon(surf, INK, [(cx - 4, y), (cx + 4, y), (cx, y + 5)], 1)
+        if self.page == 0:
+            self.draw_street(surf, m)
+        elif self.page == 1:
+            self.folk.draw(surf)
+        else:
+            self.house.draw(surf)
         # the top bar: who he is, what he has, what people think of him
         surf.fill((20, 20, 44), (0, 0, W, 13))
         text(surf, self.title(), 4, 4, (250, 250, 240))
         text(surf, "$%d" % m.coins, 104, 4, (250, 214, 110))
-        text(surf, "+$%d A PAYDAY" % self.total(), 140, 4, (120, 220, 140))
+        if self.page == 0:
+            text(surf, "+$%d A PAYDAY" % self.total(), 140, 4, (120, 220, 140))
+        elif self.page == 1:
+            text(surf, NET_NAME[self.folk.level() - 1], 140, 4, (150, 200, 250))
+        else:
+            text(surf, HOMES[self.house.tier][0], 140, 4, (250, 214, 110))
         if self.debt:
             text(surf, "OWES $%d" % self.debt, 204, 4, (240, 110, 100))
         text(surf, "REP", 254, 4, (150, 150, 180))
@@ -5512,19 +5874,35 @@ class Life:
         # the panel: the building under the arrow, and what can be done with it
         surf.fill((20, 20, 44), (0, 106, W, 64))
         surf.fill((60, 60, 100), (0, 106, W, 1))
-        sid = STREET[self.sel]
-        a = ASSET[sid]
-        status, info = self.describe(sid)
-        text(surf, a["name"], 6, 110, (250, 250, 240))
-        text(surf, status, 6, 118, (250, 214, 110))
-        text(surf, info, 6, 126, (150, 150, 180))
-        acts = self.actions(sid)
-        for i, (label, what, can) in enumerate(acts):
-            on = i == self.act % len(acts)
+        if self.page == 0:
+            sid = STREET[self.sel]
+            name = ASSET[sid]["name"]
+            status, info = self.describe(sid)
+            acts, cur = self.actions(sid), self.act
+        elif self.page == 2:
+            name, status, info = self.house.describe()
+            acts, cur = self.house.actions(), self.house.act
+        else:
+            F = self.folk
+            p = PEOPLE[F.sel]
+            pid = p["id"]
+            known = pid in F.known
+            name = p["name"] if known else "???"
+            status = (p["wants"][F.want[pid][0]][0] if pid in F.want else "ALL IS WELL") if known else "SOMEBODY WORTH KNOWING"
+            info = ("YOU ARE " + F.word(pid)) if known else "GET BETTER KNOWN TO MEET THEM"
+            acts, cur = F.actions(pid), F.act
+        text(surf, name, 6, 109, (250, 250, 240))
+        text(surf, status[:41], 6, 117, (250, 214, 110))
+        text(surf, info, 6, 125, (150, 150, 180))
+        first = clamp(cur % len(acts) - 2, 0, max(0, len(acts) - 5))
+        for i, (label, what, can) in enumerate(acts[first:first + 5]):
+            on = i + first == cur % len(acts)
             if on:
-                surf.fill((50, 50, 96), (4, 134 + i * 8, 164, 8))
-            text(surf, ("> " if on else "  ") + label, 6, 136 + i * 8, ((250, 250, 240) if on else (190, 190, 210)) if can else (100, 100, 130))
-        text(surf, "ARROWS: MOVE   ENTER: DO   ESC: HOME", 6, 163, (110, 110, 150))
+                surf.fill((50, 50, 96), (4, 133 + i * 7, 164, 7))
+            text(surf, ("> " if on else "  ") + label, 6, 134 + i * 7, ((250, 250, 240) if on else (190, 190, 210)) if can else (100, 100, 130))
+        if len(acts) > 5:
+            text(surf, "%d/%d" % (cur % len(acts) + 1, len(acts)), 148, 110, (110, 110, 150))
+        text(surf, ("TAB: PEOPLE", "TAB: HOUSE", "TAB: TOWN")[self.page], 270, 110, (110, 110, 150))
         surf.fill((60, 60, 100), (172, 108, 1, 60))
         text(surf, "NEWS", 178, 110, (230, 200, 110))
         y = 118
@@ -5570,14 +5948,53 @@ class Life:
                 text(surf, s, x + 56 - len(s) * 2, 114, (150, 150, 160) if not can else (40, 130, 70) if opt[1] > 0 else (190, 60, 50) if opt[1] else (120, 120, 140))
             text(surf, "LEFT / RIGHT, THEN ENTER", 160 - 48, 134, (120, 120, 140))
 
+    def draw_street(self, surf, m):
+        surf.fill((58, 60, 84), (0, 100, W, 6))
+        for x in range(0, W, 12):
+            surf.fill((150, 150, 120), (x - int(self.scroll or 0) % 12, 103, 6, 1))
+        # the street: painted once, until something about it changes
+        key = tuple((s, tuple(self.own[s][:2]) if s in self.own else self.locked(s)) for s in STREET[2:])
+        if key != self.street_key:
+            self.street_key = key
+            if self.street is None:
+                self.street = pygame.Surface((len(STREET) * SLOT, 92))
+                self.street.set_colorkey(KEY)
+            self.street.fill(KEY)
+            for i, s in enumerate(STREET):
+                o = self.own.get(s)
+                self.tops[s] = paint_building(self.street, i * SLOT + SLOT // 2, 86, s, bool(o),
+                                              s not in self.own and ASSET[s]["kind"] != "civic" and self.locked(s),
+                                              o[0] if o else 1, o[1] if o else 0)
+        want = clamp(self.sel * SLOT + SLOT // 2 - W // 2, 0, len(STREET) * SLOT - W)
+        self.scroll = want if self.scroll is None else lerp(self.scroll, want, 0.3)
+        sx = -int(round(self.scroll))
+        surf.blit(self.street, (sx, 14))
+        for i, s in enumerate(STREET):
+            cx = sx + i * SLOT + SLOT // 2
+            if not -SLOT < cx < W + SLOT:
+                continue
+            a = ASSET[s]
+            if a["kind"] != "civic" and s not in self.own:
+                tag = "$%d" % a["price"]
+                text(surf, tag, cx - len(tag) * 2, 14 + self.tops[s] - 8, (250, 214, 110) if m.coins >= a["price"] and not self.locked(s) else (150, 150, 180))
+            if s in self.own and self.own[s][3]:
+                text(surf, "SHUT", cx - 8, 14 + self.tops[s] - 16, (240, 80, 70))
+            if i == self.sel:
+                y = 14 + self.tops[s] - (26 if s in self.own else 18) + int(math.sin(self.t * 6) * 2)
+                pygame.draw.polygon(surf, (255, 255, 255), [(cx - 4, y), (cx + 4, y), (cx, y + 5)])
+                pygame.draw.polygon(surf, INK, [(cx - 4, y), (cx + 4, y), (cx, y + 5)], 1)
+
     # ---- keeping it ----
     def dump(self):
         return {"karma": self.karma, "own": self.own, "debt": self.debt, "shark": self.shark, "crown": self.crown,
-                "news": self.news, "seen": self.seen, "later": self.later, "mail": self.mail, "flip": self.flip}
+                "news": self.news, "seen": self.seen, "later": self.later, "mail": self.mail, "flip": self.flip,
+                "folk": self.folk.dump(), "house": self.house.dump()}
 
     def load(self, d):
         if not isinstance(d, dict):
             return
+        self.folk.load(d.get("folk"))
+        self.house.load(d.get("house"))
         try:
             self.karma = clamp(float(d.get("karma", 0)), -100, 100)
             self.own = {s: [int(o[0]) % 3, clamp(int(o[1]), 1, 3), int(o[2]), int(o[3])]
@@ -5590,6 +6007,765 @@ class Life:
             mail = d.get("mail")
             if isinstance(mail, int) and 0 <= mail < len(CHOICES):
                 self.mail, self.flip = mail, bool(d.get("flip"))
+        except (TypeError, ValueError, KeyError, IndexError):
+            pass
+
+
+# --------------------------------------------------------------------------
+# the people in his life.  Family, friends, and the contacts he makes as he
+# gets better known.  Each has a place of their own and things they need doing
+# there.  Look after them and they look after him; leave them and they drift.
+# His businesses have people too: staff whose spirits rise and fall with how
+# they are treated, and a manager he can pick from those who trust him.
+# --------------------------------------------------------------------------
+# what they need: the ask, where he does it (x, y), pose, view, height, seconds, what he says, what he carries
+PEOPLE = [
+    dict(id="mum", name="MUM", kin="family", place="mum", spot=(20, 13, "back", "stand", 0.0),
+         look=dict(skin=(244, 200, 166), hair=(190, 186, 196), shirt=(226, 130, 150), pants=(96, 84, 110)),
+         call=["ARE YOU EATING PROPERLY?", "YOUR DAD SAYS HELLO"],
+         wants=[("THE KITCHEN SHELF HAS COME DOWN", 44, 13, "look", "back", 0.0, 6.0, "NEARLY... THERE.", None),
+                ("WANTS YOU ROUND FOR SUNDAY LUNCH", 27, 49, "eat", "back", 0.0, 8.0, "PROPER GRAVY!", "cup"),
+                ("NEEDS THE SHOPPING CARRIED IN", 50, 13, "stand", "back", 0.0, 3.0, "WHERE DO THE TINS GO?", "bag")]),
+    dict(id="dad", name="DAD", kin="family", place="mum", spot=(72, 53, "back", "sit", 7.0),
+         look=dict(skin=(236, 190, 150), hair=(150, 150, 160), shirt=(110, 140, 110), pants=(80, 70, 60)),
+         call=["DID YOU SEE THE MATCH?", "I'LL PUT YOUR MUM ON"],
+         wants=[("CAN'T WORK THE NEW TV", 84, 11, "look", "back", 0.0, 6.0, "IT WAS ON THE WRONG INPUT, DAD", None),
+                ("WANTS COMPANY FOR THE MATCH", 86, 53, "sit", "back", 7.0, 9.0, "GOAL!", None)]),
+    dict(id="kim", name="KIM", kin="family", place="sis", spot=(28, 51, "back", "stand", 0.0),
+         look=dict(skin=(244, 200, 166), hair=(120, 60, 50), shirt=(120, 200, 190), pants=(70, 70, 100)),
+         call=["YOU NEVER RING ME", "GUESS WHAT HAPPENED AT WORK"],
+         wants=[("IS MOVING HER BOOKCASE AND NEEDS MUSCLE", 22, 13, "look", "back", 0.0, 6.0, "LIFT WITH THE KNEES", None),
+                ("HAD A ROUGH WEEK AND WANTS TO TALK", 84, 55, "sit", "back", 7.0, 9.0, "THAT SOUNDS HARD, KIM", None)]),
+    dict(id="pop", name="GRANDAD", kin="family", place="gran", spot=(64, 19, "side", "stand", 0.0),
+         look=dict(skin=(230, 186, 150), hair=(236, 236, 240), shirt=(150, 120, 90), pants=(70, 80, 70)),
+         call=["THE BEANS ARE COMING ON", "SPEAK UP, LAD"],
+         wants=[("NEEDS THE BEANS WATERED", 50, 19, "look", "side", 0.0, 6.0, "DRINK UP, BEANS", None),
+                ("SAYS THE SHED DOOR IS STICKING", 35, 14, "look", "side", 0.0, 6.0, "IT JUST NEEDED A SHOVE", None),
+                ("WANTS TO SHOW YOU HIS MARROW", 79, 60, "sit", "front", 7.0, 8.0, "THAT IS A BIG MARROW", None)]),
+    dict(id="sam", name="SAM", kin="friend", place="party", spot=None, look=None,
+         call=["GAME NIGHT SOON?", "BRING CRISPS NEXT TIME"],
+         wants=[("IS HAVING EVERYONE ROUND TONIGHT",)]),
+    dict(id="jo", name="JO", kin="friend", place="jo", spot=(60, 50, "back", "stand", 0.0),
+         look=dict(skin=(250, 214, 180), hair=(224, 176, 80), shirt=(90, 110, 160), pants=(60, 60, 70)),
+         call=["I'M UNDER A CAR, MAKE IT QUICK", "PUB LATER?"],
+         wants=[("NEEDS SOMEONE TO HOLD THE TORCH", 74, 50, "look", "back", 0.0, 7.0, "LEFT A BIT? THERE.", None),
+                ("IS SHORT-HANDED AT THE GARAGE", 22, 13, "look", "back", 0.0, 6.0, "WHICH ONE'S THE 10MM?", None)]),
+    dict(id="lia", name="LIA", kin="friend", place="lia", spot=(65, 20, "back", "stand", 0.0),
+         look=dict(skin=(204, 152, 112), hair=(160, 66, 44), shirt=(240, 200, 80), pants=(52, 84, 94)),
+         call=["I'M COVERED IN PAINT", "COME AND SEE THE NEW ONE"],
+         wants=[("WANTS YOU TO SIT FOR A PORTRAIT", 86, 24, "stand", "front", 0.0, 8.0, "CAN I MOVE YET?", None),
+                ("HAS A SHOW TO HANG AND TWO HANDS", 22, 13, "look", "back", 0.0, 6.0, "IS THAT STRAIGHT?", None)]),
+    dict(id="max", name="MAX", kin="friend", place="max", spot=(48, 31, "back", "sit", 7.0),
+         look=dict(skin=(240, 194, 152), hair=(64, 64, 76), shirt=(204, 124, 224), pants=(74, 74, 78)),
+         call=["HANG ON, BOSS FIGHT", "I FOUND A SECRET LEVEL"],
+         wants=[("WANTS A PLAYER TWO", 62, 31, "sit", "back", 7.0, 9.0, "ONE MORE ROUND", None),
+                ("HASN'T LEFT THE FLAT ALL WEEK", 58, 48, "stand", "back", 0.0, 6.0, "FRESH AIR EXISTS, MAX", None)]),
+    dict(id="penny", name="MR PENNY", kin="contact", place="bank", spot=(53, 14, "front", "stand", 0.0), meet=2,
+         look=dict(skin=(236, 196, 166), hair=(90, 90, 100), shirt=(60, 64, 90), pants=(40, 40, 56)),
+         perk="THE BANK LENDS MORE, AND CHEAPER", call=["RATES ARE WHAT THEY ARE", "COME IN AND WE'LL TALK"], wants=[]),
+    dict(id="rowe", name="CLLR ROWE", kin="contact", place="hall", spot=(53, 14, "front", "stand", 0.0), meet=3,
+         look=dict(skin=(150, 100, 70), hair=(40, 34, 40), shirt=(150, 60, 70), pants=(50, 50, 60)),
+         perk="UPGRADES COST A QUARTER LESS", call=["THE PLANNING COMMITTEE MEETS THURSDAY", "LEAVE IT WITH ME"], wants=[]),
+    dict(id="dee", name="DEE", kin="contact", place="depot", spot=(60, 44, "side", "stand", 0.0), meet=4,
+         look=dict(skin=(214, 160, 120), hair=(30, 30, 40), shirt=(240, 150, 60), pants=(70, 80, 100)),
+         perk="EVERY BUSINESS EARNS A TENTH MORE", call=["I CAN DO YOU A PALLET BY FRIDAY", "TRADE PRICE, FOR YOU"], wants=[]),
+    dict(id="lex", name="LEX", kin="contact", place="law", spot=(53, 14, "front", "stand", 0.0), meet=5,
+         look=dict(skin=(250, 220, 190), hair=(200, 120, 60), shirt=(236, 236, 240), pants=(44, 44, 60)),
+         perk="FINES ARE HALVED", call=["SAY NOTHING TO ANYONE", "I'VE READ THE SMALL PRINT"], wants=[]),
+]
+PERSON = {p["id"]: p for p in PEOPLE}
+PERSON["sam"]["look"] = FRIENDS[0]
+KIN_COL = {"family": (250, 180, 150), "friend": (150, 200, 250), "contact": (214, 204, 130)}
+THANKS = {"family": ["THANK YOU, LOVE", "WHAT WOULD WE DO WITHOUT YOU", "YOU'RE A GOOD ONE"],
+          "friend": ["CHEERS, ZERO", "YOU'RE A STAR", "I OWE YOU ONE"],
+          "contact": ["GOOD TO TALK", "LET'S DO BUSINESS", "MY DOOR IS ALWAYS OPEN"]}
+NET_AT = (0, 10, 25, 45, 70)
+NET_NAME = ("SHY", "FRIENDLY", "CONNECTED", "WELL KNOWN", "KNOWS EVERYBODY")
+BIZ_PLACE = {"stall": "store", "shop": "store", "pawn": "store", "cafe": "cafe", "arcade": "cafe", "casino": "cafe",
+             "clinic": "cafe", "shelter": "cafe", "firm": "office", "tower": "office"}
+_DESK = [("desk2", (40, 20, 0, 66, 32, 12))]
+PLACES.update({
+    "mum": dict(name="MUM AND DAD'S", like="home", wall=(236, 214, 180), floor=(176, 130, 96), tint=(96, 130, 160), lights=[(30, 30), (80, 40)],
+                props=[("worktop", (8, 0, 0, 60, 8, 14)), ("tvset", (70, 0, 0, 96, 5, 22)), ("table1", (14, 30, 0, 40, 44, 11)),
+                       ("sofa1", (64, 48, 0, 96, 58, 7)), ("sofa1b", (64, 58, 0, 96, 62, 15))]),
+    "sis": dict(name="KIM'S FLAT", like="home", wall=(206, 190, 224), floor=(150, 150, 170), tint=(210, 110, 130), lights=[(30, 30), (80, 40)],
+                props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("bed1", (62, 0, 0, 98, 18, 7)), ("table1", (16, 34, 0, 40, 46, 11)),
+                       ("sofa1", (62, 50, 0, 94, 60, 7)), ("sofa1b", (62, 60, 0, 94, 64, 15))]),
+    "gran": dict(name="GRANDAD'S ALLOTMENT", like="park", wall=None, floor=(110, 170, 96), lights=[(18, 26)],
+                 props=[("shed", (6, 4, 0, 30, 22, 22)), ("veg1", (44, 6, 0, 84, 15, 3)), ("veg2", (44, 22, 0, 84, 31, 3)),
+                        ("bench", (66, 50, 0, 92, 57, 8))]),
+    "jo": dict(name="JO'S GARAGE", like="home", wall=(150, 152, 164), floor=(120, 120, 130), tint=(200, 60, 50), lights=[(30, 30), (74, 50)],
+               props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("car", (48, 22, 0, 98, 42, 14)), ("crate1", (8, 56, 0, 24, 68, 10))]),
+    "lia": dict(name="LIA'S STUDIO", like="home", wall=(240, 232, 214), floor=(190, 160, 120), tint=(90, 150, 130), lights=[(30, 30), (80, 40)],
+                props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("easel", (60, 10, 0, 70, 13, 26)), ("table1", (20, 36, 0, 44, 48, 11)),
+                       ("plantpot", (4, 66, 0, 12, 74, 8))]),
+    "max": dict(name="MAX'S FLAT", like="home", wall=(96, 100, 150), floor=(104, 92, 124), tint=(80, 70, 120), lights=[(55, 20)],
+                props=[("tvset", (40, 0, 0, 72, 5, 24)), ("sofa1", (38, 26, 0, 72, 36, 7)), ("sofa1b", (38, 36, 0, 72, 40, 15)),
+                       ("crate1", (86, 50, 0, 100, 62, 10))]),
+    "bank": dict(name="THE BANK", like="office", wall=(206, 200, 180), floor=(130, 110, 100), lights=[(53, 30)],
+                 props=[("safe", (8, 2, 0, 26, 16, 22))] + _DESK + [("plantpot", (4, 66, 0, 12, 74, 8))]),
+    "hall": dict(name="THE TOWN HALL", like="office", wall=(190, 170, 164), floor=(120, 60, 60), lights=[(53, 30)],
+                 props=[("shelf1", (8, 0, 0, 38, 8, 26))] + _DESK + [("plantpot", (4, 66, 0, 12, 74, 8))]),
+    "depot": dict(name="DEE'S DEPOT", like="home", wall=(170, 160, 140), floor=(140, 136, 130), lights=[(40, 30), (80, 50)],
+                  props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("shelf2", (42, 0, 0, 72, 8, 26)), ("crate1", (20, 30, 0, 40, 44, 14)),
+                         ("crate2", (80, 52, 0, 98, 66, 12))]),
+    "law": dict(name="LEX AND PARTNERS", like="office", wall=(120, 100, 96), floor=(90, 110, 100), lights=[(53, 30)],
+                props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("shelf2", (70, 0, 0, 100, 8, 26))] + _DESK),
+    "cafe": dict(name="THE CAFE", like="store", sign="OPEN", wall=(232, 214, 190), floor=(190, 170, 150), lights=[(30, 30), (80, 30), (60, 62)],
+                 props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("table1", (62, 20, 0, 78, 32, 11)), ("table2", (84, 44, 0, 102, 56, 11)),
+                        ("counter", (20, 56, 0, 46, 64, 14))]),
+    "let": dict(name="THE TENANTS", like="home", wall=(214, 206, 196), floor=(160, 140, 120), tint=(120, 130, 90), lights=[(30, 30), (80, 40)],
+                props=[("worktop", (8, 0, 0, 44, 8, 14)), ("table1", (16, 34, 0, 40, 46, 11)),
+                       ("sofa1", (62, 50, 0, 94, 60, 7)), ("sofa1b", (62, 60, 0, 94, 64, 15))]),
+})
+
+
+class Folk:
+    def __init__(self, life):
+        self.L = life
+        self.bond = {p["id"]: {"family": 60.0, "friend": 50.0, "contact": 20.0}[p["kin"]] for p in PEOPLE}
+        self.known = set(p["id"] for p in PEOPLE if p["kin"] != "contact")
+        self.want = {}               # who -> [which need, paydays before they give up on him]
+        self.rang = {}               # who -> seconds until another call means anything
+        self.xp = 0.0
+        self.mgr = {}                # business -> who runs it for him
+        self.morale = {}             # business -> spirits of the people in it, 0..100
+        self.sel, self.act = 0, 0
+        self.errand = None
+        self.heads = {}
+
+    # ---- getting known ----
+    def level(self):
+        return sum(1 for n in NET_AT if self.xp >= n)
+
+    def learn(self, n):
+        was = self.level()
+        self.xp += n
+        if self.level() > was:
+            self.L.tell("PEOPLE KNOW YOUR NAME: YOU ARE NOW " + NET_NAME[self.level() - 1] + ".")
+        for p in PEOPLE:
+            if p["kin"] == "contact" and p["id"] not in self.known and self.level() >= p["meet"]:
+                self.known.add(p["id"])
+                self.L.tell("A FRIEND OF A FRIEND INTRODUCES YOU TO %s." % p["name"])
+
+    def perk(self, pid):
+        return pid in self.known and self.bond[pid] >= 40
+
+    def warm(self, pid, n):
+        self.bond[pid] = clamp(self.bond[pid] + n, 0, 100)
+
+    def word(self, pid):
+        b = self.bond[pid]
+        return "VERY CLOSE" if b >= 80 else "CLOSE" if b >= 60 else "WARM" if b >= 40 else "DRIFTING" if b >= 20 else "NEARLY STRANGERS"
+
+    def needy(self):
+        """Who he would go and see if left to himself."""
+        ask = [p for p in self.want if PERSON[p]["kin"] != "contact"]
+        if ask:
+            return random.choice(ask)
+        low = [p["id"] for p in PEOPLE if p["kin"] != "contact" and self.bond[p["id"]] < 35]
+        return random.choice(low) if low else None
+
+    def where(self, what, key):
+        """The place an errand happens in, and what to call it."""
+        if what == "manage":
+            kind = BIZ_PLACE.get(key, "let")
+            return kind, the(key)
+        kind = PERSON[key]["place"]
+        return kind, PLACES[kind]["name"]
+
+    # ---- the passing of time ----
+    def update(self, dt):
+        for k in list(self.rang):
+            self.rang[k] -= dt
+            if self.rang[k] <= 0:
+                del self.rang[k]
+
+    def payday(self):
+        L, m = self.L, self.L.w.man
+        home = L.free()
+        for p in PEOPLE:
+            pid = p["id"]
+            if pid not in self.known:
+                continue
+            self.warm(pid, -0.5 if p["kin"] == "contact" else -1.0)
+            if pid in self.want:
+                self.want[pid][1] -= 1
+                if self.want[pid][1] <= 0:                  # he never came
+                    del self.want[pid]
+                    self.warm(pid, -8)
+                    L.add_karma(-1)
+                    L.tell("%s GAVE UP WAITING FOR YOU." % p["name"])
+            elif p["wants"] and random.random() < 0.06 and len(self.want) < 2:
+                i = random.randrange(len(p["wants"]))
+                self.want[pid] = [i, 5]
+                L.tell("%s RANG: %s." % (p["name"], p["wants"][i][0]))
+                play("knock", 0.3)
+            elif p["kin"] == "family" and self.bond[pid] < 20 and random.random() < 0.3:
+                m.mood = max(0.0, m.mood - 10)
+                L.tell("%s HASN'T HEARD FROM YOU IN AGES." % p["name"])
+            elif p["kin"] != "contact" and self.bond[pid] >= 70 and random.random() < 0.1 and home:
+                self.favour(pid)
+        for sid, o in L.own.items():                        # spirits follow how the place is run
+            mo = self.morale.get(sid, 60.0)
+            mo += (6, 0, -8)[o[0]] + (60 - mo) * 0.05
+            boss = self.mgr.get(sid)
+            if boss and self.bond[boss] >= 60:
+                mo += 3
+            self.morale[sid] = clamp(mo, 0, 100)
+        for d in (self.mgr, self.morale):
+            for sid in list(d):
+                if sid not in L.own:
+                    del d[sid]
+
+    def favour(self, pid):
+        """Someone close does him a good turn."""
+        L, w, m = self.L, self.L.w, self.L.w.man
+        if pid in ("mum", "pop"):
+            m.food = 4
+            L.tell("MUM DROPPED OFF A LASAGNE." if pid == "mum" else "GRANDAD LEFT A BOX OF VEG AT THE DOOR.")
+        elif pid == "dad":
+            m.coins += 10
+            L.tell("DAD SLIPPED YOU A TENNER. DON'T TELL YOUR MUM.")
+        elif pid == "jo":
+            broken = [n for n, it in w.items.items() if it.state == "broken"]
+            if broken:
+                n = random.choice(broken)
+                w.items[n].reset()
+                if n in w.notices:
+                    w.notices.remove(n)
+                L.tell("JO POPPED ROUND AND FIXED THE %s." % n.upper())
+        else:
+            m.mood = min(100.0, m.mood + 15)
+            m.need["fun"] = min(100.0, m.need["fun"] + 15)
+            L.tell("%s SENT SOMETHING THAT MADE YOU LAUGH." % PERSON[pid]["name"])
+
+    def walkout(self, sid):
+        mo = self.morale.get(sid, 60.0)
+        chance = 0.25 if mo < 30 else 0.06 if mo < 45 else 0.0
+        boss = self.mgr.get(sid)
+        if boss and self.bond[boss] >= 60:
+            chance *= 0.5
+        return random.random() < chance
+
+    def boost(self, sid):
+        """How the people in a business change what it earns."""
+        f = 0.8 + self.morale.get(sid, 60.0) / 250.0
+        boss = self.mgr.get(sid)
+        if boss:
+            f *= 1 + (self.bond[boss] - 40) / 300.0         # a friend works hard for him; a stranger helps himself
+        if self.perk("dee") and ASSET[sid]["kind"] == "biz":
+            f *= 1.1
+        return f
+
+    # ---- what came of an errand ----
+    def visited(self, pid, what):
+        L = self.L
+        p = PERSON[pid]
+        if pid in self.want:
+            del self.want[pid]
+            self.warm(pid, 18)
+            L.add_karma(2)
+            L.tell("YOU WERE THERE WHEN %s NEEDED YOU." % p["name"])
+        else:
+            self.warm(pid, 14 if what == "meet" else 10)
+        for q in PEOPLE:                                    # whoever else lives there is glad too
+            if q["place"] == p["place"] and q["id"] != pid:
+                self.warm(q["id"], 4)
+        self.learn(5 if what == "meet" else 3)
+        m = L.w.man
+        m.mood = min(100.0, m.mood + 8)
+        m.need["fun"] = min(100.0, m.need["fun"] + 15)
+
+    def managed(self, sid):
+        L = self.L
+        self.morale[sid] = min(100.0, self.morale.get(sid, 60.0) + 25)
+        if L.own[sid][3]:
+            L.own[sid][3] = 0
+            L.tell("YOU TALKED THEM ROUND. %s IS OPEN AGAIN." % the(sid))
+        self.learn(1)
+
+    def partied(self):
+        for pid in ("sam", "jo", "lia", "max"):
+            self.warm(pid, 6)
+        if "sam" in self.want:
+            del self.want["sam"]
+            self.warm("sam", 10)
+        self.learn(4)
+
+    # ---- the people page ----
+    def actions(self, pid):
+        L, m, p = self.L, self.L.w.man, PERSON[pid]
+        if pid not in self.known:
+            return [("NOT YET INTRODUCED", "none", False)]
+        free = L.free()
+        out = [("RING THEM" if pid not in self.rang else "RANG JUST NOW", "call", pid not in self.rang)]
+        if p["kin"] == "contact":
+            out.append((("MEET AT " + PLACES[p["place"]]["name"]) if free else "HE'S BUSY RIGHT NOW", "meet", free))
+            out.append(("TAKE TO LUNCH $20", "lunch", m.coins >= 20))
+        else:
+            go = "GO ROUND AND HELP" if pid in self.want else "GO ROUND AND SEE THEM"
+            out.append((go if free else "HE'S BUSY RIGHT NOW", "visit", free))
+        out.append(("SEND A GIFT $15", "gift", m.coins >= 15))
+        return out
+
+    def do(self, pid, what):
+        """Returns True if the screen should close so he can get going."""
+        L, m, p = self.L, self.L.w.man, PERSON[pid]
+        if what == "call":
+            self.rang[pid] = 90.0
+            self.warm(pid, 3 + self.level())
+            self.learn(1)
+            L.tell("%s: %s" % (p["name"], random.choice(p["call"])))
+            play("talk1", 0.2)
+            if L.free():
+                m.say("HI %s, IT'S ME" % p["name"], 2.2)
+        elif what in ("visit", "meet"):
+            self.errand = (what, pid)
+            return True
+        elif what == "lunch":
+            m.coins -= 20
+            self.warm(pid, 12)
+            self.learn(5)
+            L.tell("LUNCH WITH %s. THEY LAUGHED AT YOUR JOKE." % p["name"])
+            play("coin")
+        elif what == "gift":
+            m.coins -= 15
+            self.warm(pid, 8)
+            L.tell("%s LOVED THE PRESENT." % p["name"])
+            play("coin")
+        return False
+
+    def manager_next(self, sid):
+        """Hand the keys to the next person who would take them, or to nobody."""
+        can = [None] + [p["id"] for p in PEOPLE if p["kin"] != "contact" and p["id"] not in
+                        [v for k, v in self.mgr.items() if k != sid]]
+        i = can.index(self.mgr.get(sid)) if self.mgr.get(sid) in can else 0
+        nxt = can[(i + 1) % len(can)]
+        if nxt:
+            self.mgr[sid] = nxt
+        else:
+            self.mgr.pop(sid, None)
+
+    def head(self, pid):
+        if pid not in self.heads:
+            look = PERSON[pid]["look"]
+            h = head_sprite("front", 1, "ok", 2, 0, look["skin"], look["hair"])
+            self.heads[pid] = pygame.transform.scale(h, (h.get_width() * 2, h.get_height() * 2))
+        return self.heads[pid]
+
+    def draw(self, surf):
+        L, t = self.L, self.L.t
+        surf.fill((28, 28, 58), (0, 14, W, 92))
+        for i, p in enumerate(PEOPLE):
+            pid, y = p["id"], 17 + i * 7
+            known = pid in self.known
+            if i == self.sel:
+                surf.fill((54, 54, 104), (2, y - 1, 114, 7))
+            if pid in self.want:
+                text(surf, "!", 5, y, (250, 214, 110) if int(t * 3) % 2 else (190, 150, 70))
+            text(surf, p["name"] if known else "???", 11, y, KIN_COL[p["kin"]] if known else (100, 100, 130))
+            surf.fill((18, 18, 40), (58, y + 1, 40, 3))
+            if known:
+                b = self.bond[pid]
+                surf.fill((120, 220, 140) if b >= 60 else (230, 200, 110) if b >= 30 else (230, 90, 80), (58, y + 1, int(b * 0.4), 3))
+            boss = [s for s, v in self.mgr.items() if v == pid]
+            if boss:
+                text(surf, "MGR", 101, y, (150, 150, 190))
+        surf.fill((60, 60, 100), (118, 16, 1, 88))
+        p = PEOPLE[self.sel]
+        pid = p["id"]
+        if pid not in self.known:
+            text(surf, "SOMEBODY WORTH KNOWING", 128, 22, (150, 150, 180))
+            text(surf, "GET BETTER KNOWN TO MEET THEM.", 128, 34, (130, 130, 164))
+            text(surf, "YOU NEED TO BE: " + NET_NAME[p["meet"] - 1], 128, 42, (130, 130, 164))
+        else:
+            h = self.head(pid)
+            pygame.draw.rect(surf, (44, 44, 84), (126, 20, 44, 44), border_radius=3)
+            surf.blit(h, (148 - h.get_width() // 2, 44 - h.get_height() // 2))
+            text(surf, p["name"], 178, 22, (250, 250, 240))
+            text(surf, {"family": "FAMILY", "friend": "FRIEND", "contact": "CONTACT"}[p["kin"]], 178, 30, KIN_COL[p["kin"]])
+            text(surf, "AT " + ("SAM'S PLACE" if pid == "sam" else PLACES[p["place"]]["name"]), 178, 38, (150, 150, 180))
+            text(surf, self.word(pid), 178, 46, (120, 220, 140) if self.bond[pid] >= 40 else (230, 110, 100))
+            boss = [s for s, v in self.mgr.items() if v == pid]
+            if boss:
+                text(surf, "RUNS " + the(boss[0]), 178, 54, (150, 150, 190))
+            y = 70
+            if p["kin"] == "contact":
+                text(surf, "KNOWING THEM WELL:", 126, y, (150, 150, 180))
+                text(surf, p["perk"], 126, y + 8, (120, 220, 140) if self.perk(pid) else (130, 130, 164))
+                if not self.perk(pid):
+                    text(surf, "NOT YET. GET CLOSER.", 126, y + 16, (130, 130, 164))
+            elif pid in self.want:
+                need = p["wants"][self.want[pid][0]][0]
+                pygame.draw.rect(surf, (252, 250, 240), (124, y - 3, 190, 22), border_radius=3)
+                for i, l in enumerate(wrap(p["name"] + ": " + need, 45)):
+                    text(surf, l, 128, y + i * 7, INK)
+                left = self.want[pid][1]
+                text(surf, "WAITING. %d PAYDAY%s LEFT." % (left, "" if left == 1 else "S"), 126, y + 24, (230, 200, 110))
+            else:
+                text(surf, "DOESN'T NEED ANYTHING JUST NOW.", 126, y, (130, 130, 164))
+                text(surf, "A CALL OR A VISIT KEEPS YOU CLOSE.", 126, y + 8, (130, 130, 164))
+
+    # ---- keeping it ----
+    def dump(self):
+        return {"bond": self.bond, "known": sorted(self.known), "want": self.want, "xp": self.xp, "mgr": self.mgr,
+                "morale": self.morale}
+
+    def load(self, d):
+        if not isinstance(d, dict):
+            return
+        try:
+            for k, v in d.get("bond", {}).items():
+                if k in self.bond:
+                    self.bond[k] = clamp(float(v), 0, 100)
+            self.known |= set(k for k in d.get("known", []) if k in PERSON)
+            self.want = {k: [int(v[0]) % len(PERSON[k]["wants"]), int(v[1])] for k, v in d.get("want", {}).items()
+                         if k in PERSON and PERSON[k]["wants"]}
+            self.xp = float(d.get("xp", 0))
+            self.mgr = {k: v for k, v in d.get("mgr", {}).items() if k in ASSET and v in PERSON}
+            self.morale = {k: clamp(float(v), 0, 100) for k, v in d.get("morale", {}).items() if k in ASSET}
+        except (TypeError, ValueError, KeyError, IndexError):
+            pass
+
+
+# --------------------------------------------------------------------------
+# where he lives.  He starts in a studio flat and can move up: a townhouse, a
+# villa, a mansion.  Each step changes how the place is finished, what he
+# wears and drives, and how many more rooms the house can hold.  Rooms are
+# built, improved and swapped one at a time, and each is a place of its own
+# that he walks through to and uses.
+# --------------------------------------------------------------------------
+#        name            cost  rooms  what he wears  car
+HOMES = [("STUDIO FLAT", 0, 1, "home", (206, 70, 60)),
+         ("TOWNHOUSE", 700, 3, "smart", (70, 110, 190)),
+         ("VILLA", 3000, 5, "suit", (44, 48, 64)),
+         ("MANSION", 12000, 8, "luxe", (236, 222, 180))]
+HOME_LOOK = [dict(),
+             dict(WALL_L=(226, 220, 204), BRICK=(120, 142, 160), FLOOR=(178, 120, 76), WOOD=(128, 84, 56), PLUM=(70, 130, 150)),
+             dict(WALL_L=(240, 236, 226), BRICK=(214, 200, 180), FLOOR=(214, 186, 150), WOOD=(170, 130, 96), PLUM=(214, 190, 150),
+                  TEAL=(120, 170, 200)),
+             dict(WALL_L=(244, 238, 220), BRICK=(104, 60, 80), FLOOR=(232, 226, 232), WOOD=(96, 56, 44), PLUM=(120, 70, 160),
+                  TEAL=(214, 180, 90))]
+_LOOK0 = {k: globals()[k] for k in ("WALL_L", "BRICK", "FLOOR", "WOOD", "PLUM", "TEAL")}
+OUTFITS.update({"smart": ((90, 150, 200), (50, 56, 80)), "suit": ((48, 52, 76), (38, 40, 58)), "luxe": ((250, 248, 240), (214, 180, 90))})
+LIFESTYLE = ("home", "smart", "suit", "luxe")
+# each room: what it costs, what using it does for him, where he does it (x, y, pose, view, height, seconds), what he says
+ROOMS = {
+    "dining": dict(name="DINING ROOM", cost=200, gives=dict(food=45, mood=6), do=(60, 51, "eat", "back", 0.0, 8.0), carry="cup",
+                   says=["A PROPER SIT-DOWN DINNER", "WHO NEEDS A RESTAURANT?"], note="A PROPER MEAL WHENEVER HE LIKES"),
+    "gym": dict(name="GYM", cost=250, gives=dict(fun=25, mood=10, wash=-15), do=(65, 39, "look", "back", 0.0, 8.0),
+                says=["ONE MORE REP", "FEEL THE BURN", "TWENTY... TWENTY-ONE..."], note="KEEPS HIM FIT AND CHEERFUL"),
+    "library": dict(name="LIBRARY", cost=300, gives=dict(fun=15, mood=15, rest=10), do=(56, 49, "sit", "back", 7.0, 9.0),
+                    says=["JUST ONE MORE CHAPTER", "I DO LOVE A QUIET HOUR"], note="A QUIET HOUR WITH A BOOK"),
+    "study": dict(name="HOME OFFICE", cost=350, gives=dict(coins=12, fun=-5), do=(53, 40, "sit", "back", 6.0, 8.0),
+                  says=["A LITTLE EXTRA ON THE SIDE", "SEND. SEND. SEND."], note="EARNS A LITTLE EVERY TIME HE USES IT"),
+    "games": dict(name="GAMES ROOM", cost=350, gives=dict(fun=45), do=(55, 31, "sit", "back", 7.0, 9.0),
+                  says=["NEW HIGH SCORE!", "ONE MORE GO"], note="HOURS OF FUN"),
+    "garden": dict(name="GARDEN", cost=300, gives=dict(fun=20, mood=15, rest=5), do=(79, 60, "sit", "front", 7.0, 9.0),
+                   says=["LISTEN TO THE BIRDS", "MY OWN PATCH OF GREEN"], note="FRESH AIR WITHOUT LEAVING HOME"),
+    "garage": dict(name="GARAGE", cost=400, gives=dict(fun=20, mood=12), do=(74, 50, "look", "back", 0.0, 7.0),
+                   says=["LOOK AT THAT SHINE", "SHE'S A BEAUTY"], note="SOMEWHERE TO POLISH THE CAR"),
+    "spa": dict(name="SPA", cost=450, gives=dict(wash=100, rest=15, mood=8), do=(50, 32, "sit", "front", 2.0, 9.0),
+                says=["AHHHH.", "NOW THIS IS LIVING"], note="A LONG HOT SOAK"),
+    "cinema": dict(name="HOME CINEMA", cost=500, gives=dict(fun=60, mood=5), do=(40, 35, "sit", "back", 7.0, 10.0),
+                   says=["THE BIG SCREEN, ALL TO MYSELF", "POPCORN!"], note="THE BIGGEST SCREEN IN TOWN"),
+    "pool": dict(name="SWIMMING POOL", cost=900, gives=dict(wash=35, fun=40, mood=10), do=(52, 17, "sit", "front", 1.0, 9.0),
+                 says=["THE WATER'S LOVELY", "TWENTY LENGTHS. WELL, TWO."], note="A SWIM BEFORE BREAKFAST"),
+}
+ROOM_ORDER = list(ROOMS)
+NEED_ROOM = {"food": ("dining",), "fun": ("cinema", "games", "pool", "gym", "garden", "garage", "library"), "wash": ("spa", "pool")}
+PLACES.update({
+    "dining": dict(like="home", wall=(236, 220, 190), floor=(150, 100, 70), tint=(150, 60, 60), lights=[(60, 36)],
+                   props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("table1", (36, 28, 0, 84, 46, 11))]),
+    "gym": dict(like="home", wall=(200, 206, 214), floor=(90, 96, 110), tint=(220, 80, 60), lights=[(40, 30), (80, 40)],
+                props=[("crate1", (8, 4, 0, 24, 16, 10)), ("weights", (50, 24, 0, 80, 34, 8))]),
+    "library": dict(like="home", wall=(130, 96, 84), floor=(150, 110, 80), tint=(60, 110, 90), lights=[(56, 40)],
+                    props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("shelf2", (42, 0, 0, 72, 8, 26)), ("shelf3", (76, 0, 0, 100, 8, 26)),
+                           ("sofa1", (40, 44, 0, 72, 54, 7)), ("sofa1b", (40, 54, 0, 72, 58, 15))]),
+    "study": dict(like="office", wall=(190, 200, 190), floor=(120, 100, 84), lights=[(53, 30)],
+                  props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("desk2", (40, 20, 0, 66, 32, 12))]),
+    "games": dict(like="home", wall=(84, 88, 136), floor=(90, 110, 100), tint=(200, 90, 60), lights=[(55, 20), (96, 50)],
+                  props=[("tvset", (40, 0, 0, 72, 5, 24)), ("sofa1", (38, 26, 0, 72, 36, 7)), ("sofa1b", (38, 36, 0, 72, 40, 15)),
+                         ("table2", (86, 44, 0, 108, 60, 11))]),
+    "garden": dict(like="park", wall=None, floor=(104, 176, 104), lights=[(51, 16)],
+                   props=[("tree1", (10, 8, 0, 15, 13, 18)), ("lamp", (50, 6, 0, 52, 8, 30)), ("veg1", (60, 6, 0, 92, 15, 3)),
+                          ("bench", (66, 50, 0, 92, 57, 8))]),
+    "garage": dict(like="home", wall=(150, 152, 164), floor=(120, 120, 130), tint=(200, 60, 50), lights=[(30, 30), (74, 50)],
+                   props=[("shelf1", (8, 0, 0, 38, 8, 26)), ("car", (48, 22, 0, 98, 42, 14))]),
+    "spa": dict(like="home", wall=(214, 232, 230), floor=(190, 214, 214), tint=(110, 200, 220), lights=[(50, 36)],
+                props=[("tub", (30, 20, 0, 70, 44, 6))]),
+    "cinema": dict(like="home", wall=(54, 46, 74), floor=(110, 50, 60), tint=(150, 40, 50), lights=[(56, 44)],
+                   props=[("tvset", (20, 0, 0, 92, 5, 36)), ("sofa1", (24, 30, 0, 56, 40, 7)), ("sofa1b", (24, 40, 0, 56, 44, 15)),
+                          ("sofa2", (62, 30, 0, 94, 40, 7)), ("sofa2b", (62, 40, 0, 94, 44, 15))]),
+    "pool": dict(like="park", wall=None, floor=(120, 180, 120), lights=[(51, 16)],
+                 props=[("pool", (14, 4, 0, 90, 30, 1)), ("bench", (66, 50, 0, 92, 57, 8))]),
+})
+for _k, _r in ROOMS.items():
+    PLACES[_k]["name"] = "THE " + _r["name"]
+
+
+# furniture: name, price, and the pieces it is made of (painter, half width, back, front, height)
+FURNI = {"plant": ("PLANT", 40), "rug": ("RUG", 60), "table": ("SIDE TABLE", 80), "chair": ("ARMCHAIR", 100),
+         "shelf": ("BOOKCASE", 120), "statue": ("STATUE", 200), "cabinet": ("ARCADE CABINET", 250), "piano": ("PIANO", 400)}
+FURNI_ORDER = list(FURNI)
+SPOTS = ((18, 69, "LEFT"), (52, 70, "MIDDLE"), (100, 69, "RIGHT"))
+PAINTS = [("AS BUILT", None), ("CREAM", (240, 230, 206)), ("SAGE", (170, 196, 170)), ("SKY", (170, 200, 228)),
+          ("ROSE", (228, 182, 186)), ("CHARCOAL", (84, 86, 104)), ("PLUM", (120, 84, 120)), ("GOLD", (224, 196, 120))]
+
+
+def furni_props(i, item):
+    """The pieces of one bit of furniture, standing at one of a room's three free spots."""
+    cx, cy = SPOTS[i][:2]
+    if item == "plant":
+        return [("plantpot_f%d" % i, (cx - 4, cy - 4, 0, cx + 4, cy + 4, 8))]
+    if item == "rug":
+        return [("rug_f%d" % i, (cx - 13, cy - 7, 0, cx + 13, cy + 7, 0.4))]
+    if item == "table":
+        return [("table_f%d" % i, (cx - 10, cy - 6, 0, cx + 10, cy + 6, 11))]
+    if item == "chair":
+        return [("sofa_f%d" % i, (cx - 8, cy - 6, 0, cx + 8, cy + 3, 7)), ("sofa_f%db" % i, (cx - 8, cy + 3, 0, cx + 8, cy + 6, 15))]
+    if item == "shelf":
+        return [("shelf_f%d" % i, (cx - 12, cy - 3, 0, cx + 12, cy + 3, 26))]
+    if item == "statue":
+        return [("trophy_f%d" % i, (cx - 3, cy - 3, 0, cx + 3, cy + 3, 8))]
+    if item == "cabinet":
+        return [("cabinet_f%d" % i, (cx - 5, cy - 4, 0, cx + 5, cy + 4, 22))]
+    return [("piano_f%d" % i, (cx - 11, cy - 6, 0, cx + 11, cy + 6, 12))]
+
+
+class House:
+    def __init__(self, life):
+        self.L = life
+        self.tier = 0
+        self.rooms = [None] * 8          # each built room: [kind, level 1-3, furniture at its three spots, paint]
+        self.sel, self.act, self.plan = 0, 0, 0
+        self.style = 0                   # which finish the main room wears: any he has lived in
+        self.shop, self.spot = 0, 0      # where the catalogue is open, and which spot he is furnishing
+        self.due = False                 # the flat needs repainting in its new finish
+        self.go = None                   # a room he has been sent to
+
+    def slots(self):
+        return HOMES[self.tier][2]
+
+    def wear(self):
+        return HOMES[self.tier][3]
+
+    def built(self):
+        return [r[0] for r in self.rooms if r]
+
+    def level(self, kind):
+        return next((r[1] for r in self.rooms if r and r[0] == kind), 1)
+
+    def record(self, kind):
+        return next((r for r in self.rooms if r and r[0] == kind), None)
+
+    def room_for(self, need):
+        have = [k for k in NEED_ROOM.get(need, ()) if k in self.built()]
+        return random.choice(have) if have else None
+
+    def planned(self):
+        """The room type the plans are open at: one he has not built yet."""
+        free = [k for k in ROOM_ORDER if k not in self.built()]
+        return free[self.plan % len(free)] if free else None
+
+    def value(self):
+        return (sum(h[1] for h in HOMES[:self.tier + 1]) + sum(ROOMS[r[0]]["cost"] * r[1] for r in self.rooms if r)
+                + sum(FURNI[f][1] for r in self.rooms if r for f in r[2] if f))
+
+    def used(self, kind):
+        """He has just spent a while in one of his rooms."""
+        m = self.L.w.man
+        f = (1.0, 1.4, 1.8)[self.level(kind) - 1] + 0.08 * sum(1 for x in self.record(kind)[2] if x)     # a well-furnished room does more
+        for k, v in ROOMS[kind]["gives"].items():
+            if k == "coins":
+                m.coins += int(v * f)
+                play("coin", 0.3)
+            elif k == "mood":
+                m.mood = clamp(m.mood + v * f, 0, 100)
+            else:
+                m.need[k] = clamp(m.need[k] + (v * f if v > 0 else v), 0, 100)
+
+    def restyle(self):
+        """Repaint the flat in the finish that goes with the house he has now."""
+        w = self.L.w
+        globals().update(_LOOK0)
+        globals().update(HOME_LOOK[min(self.style, self.tier)])
+        w.cache.clear()
+        w.room = w.build_room()
+        w.mask = pygame.mask.from_surface(w.room)
+        w.lit_key = None
+        m = w.man
+        if m.outfit in LIFESTYLE:
+            m.outfit = self.wear()
+        self.due = False
+
+    # ---- the house page ----
+    def actions(self):
+        L, m = self.L, self.L.w.man
+        if self.sel == 0:
+            out = []
+            if self.tier + 1 < len(HOMES):
+                n = HOMES[self.tier + 1]
+                out.append(("MOVE UP TO A %s $%d" % (n[0], n[1]), "move", m.coins >= n[1]))
+            else:
+                out.append(("THE FINEST HOUSE IN TOWN", "none", False))
+            if self.tier:
+                out.append(("FINISH: " + HOMES[min(self.style, self.tier)][0] + " STYLE", "style", True))
+            return out
+        i = self.sel - 1
+        if i >= self.slots():
+            return [("NEEDS A BIGGER HOUSE", "none", False)]
+        r, plan = self.rooms[i], self.planned()
+        out = []
+        if r:
+            free = L.free()
+            out.append(("WALK IN" if free else "HE'S BUSY RIGHT NOW", "walk", free))
+            if r[1] < 3:
+                c = ROOMS[r[0]]["cost"] * r[1]
+                out.append(("IMPROVE IT $%d" % c, "up", m.coins >= c))
+            item = FURNI_ORDER[self.shop % len(FURNI_ORDER)]
+            sp = self.spot % 3
+            out.append(("SHOP: %s $%d" % FURNI[item], "shop", True))
+            out.append(("SPOT: %s, %s" % (SPOTS[sp][2], FURNI[r[2][sp]][0] if r[2][sp] else "EMPTY"), "spot", True))
+            out.append(("BUY IT AND PUT IT THERE", "furnish", m.coins >= FURNI[item][1]))
+            if r[2][sp]:
+                out.append(("CLEAR THAT SPOT", "clear", True))
+            if PLACES[r[0]]["wall"]:
+                out.append(("REPAINT: %s $20" % PAINTS[(r[3] + 1) % len(PAINTS)][0], "paint", m.coins >= 20))
+            if self.slots() > 1:
+                out.append(("MOVE THE ROOM ALONG", "shift", True))
+        if plan:
+            out.append(("PLANS: " + ROOMS[plan]["name"], "plan", True))
+            c = ROOMS[plan]["cost"] // (2 if r else 1)
+            out.append((("SWAP IT FOR THAT $%d" if r else "BUILD IT $%d") % c, "build", m.coins >= c))
+        return out
+
+    def describe(self):
+        if self.sel == 0:
+            return (HOMES[self.tier][0], "%d OF %d ROOMS BUILT" % (len(self.built()), self.slots()),
+                    "A BIGGER HOUSE HOLDS MORE ROOMS" if self.tier < 3 else "NOT BAD FOR A MAN IN A BOX")
+        i = self.sel - 1
+        if i >= self.slots():
+            return ("NO SPACE YET", "THIS HOUSE HAS %d ROOM%s TO SPARE" % (self.slots(), "" if self.slots() == 1 else "S"), "MOVE UP TO UNLOCK IT")
+        r = self.rooms[i]
+        if r:
+            n = sum(1 for f in r[2] if f)
+            return (ROOMS[r[0]]["name"], "LEVEL %d, %d OF 3 SPOTS FURNISHED" % (r[1], n), ROOMS[r[0]]["note"])
+        plan = self.planned()
+        return ("EMPTY SPACE", "READY TO BUILD ON", ROOMS[plan]["note"] if plan else "")
+
+    def do(self, what):
+        """Returns True if the screen should close so he can go and use a room."""
+        L, m = self.L, self.L.w.man
+        i = self.sel - 1
+        if what == "move":
+            self.tier += 1
+            self.style = self.tier
+            m.coins -= HOMES[self.tier][1]
+            self.due = True
+            L.tell("YOU MOVED UP: THE PLACE IS A %s NOW." % HOMES[self.tier][0])
+            play("cheer")
+        elif what == "plan":
+            self.plan += 1
+        elif what == "build":
+            plan, r = self.planned(), self.rooms[i]
+            m.coins -= ROOMS[plan]["cost"] // (2 if r else 1)
+            self.rooms[i] = [plan, r[1] if r else 1, r[2] if r else [None, None, None], 0]
+            self.plan = 0
+            L.tell("THE %s IS FINISHED." % ROOMS[plan]["name"])
+            play("coin")
+        elif what == "up":
+            r = self.rooms[i]
+            m.coins -= ROOMS[r[0]]["cost"] * r[1]
+            r[1] += 1
+            play("coin")
+        elif what == "walk":
+            self.go = self.rooms[i][0]
+            return True
+        elif what == "style":
+            self.style = (min(self.style, self.tier) + 1) % (self.tier + 1)
+            self.due = True
+        elif what == "shop":
+            self.shop += 1
+        elif what == "spot":
+            self.spot += 1
+        elif what == "furnish":
+            item = FURNI_ORDER[self.shop % len(FURNI_ORDER)]
+            m.coins -= FURNI[item][1]
+            self.rooms[i][2][self.spot % 3] = item
+            L.w.cache.clear()
+            L.tell("A NEW %s FOR THE %s." % (FURNI[item][0], ROOMS[self.rooms[i][0]]["name"]))
+            play("coin")
+        elif what == "clear":
+            self.rooms[i][2][self.spot % 3] = None
+        elif what == "paint":
+            m.coins -= 20
+            self.rooms[i][3] = (self.rooms[i][3] + 1) % len(PAINTS)
+            play("coin")
+        elif what == "shift":
+            j = (i + 1) % self.slots()
+            self.rooms[i], self.rooms[j] = self.rooms[j], self.rooms[i]
+            self.sel = j + 1
+        return False
+
+    def draw(self, surf):
+        t = self.L.t
+        surf.fill((28, 28, 58), (0, 14, W, 92))
+        on = self.sel == 0
+        pygame.draw.rect(surf, (70, 62, 96) if on else (50, 46, 80), (6, 20, 82, 80), border_radius=3)
+        pygame.draw.rect(surf, (255, 255, 255) if on else (90, 90, 130), (6, 20, 82, 80), 1, border_radius=3)
+        name = HOMES[self.tier][0]
+        text(surf, name, 47 - len(name) * 2, 26, (250, 214, 110))
+        # a little picture of the house: it grows with every move
+        bx, by = 47, 88
+        wd, ht = (20, 30, 44, 64)[self.tier], (22, 30, 30, 38)[self.tier]
+        col = (HOME_LOOK[self.tier].get("BRICK") or _LOOK0["BRICK"])
+        surf.fill(col, (bx - wd // 2, by - ht, wd, ht))
+        pygame.draw.rect(surf, OUTLINE, (bx - wd // 2, by - ht, wd, ht), 1)
+        if self.tier:
+            pygame.draw.polygon(surf, shade(col, 0.6), [(bx - wd // 2 - 2, by - ht), (bx, by - ht - 9), (bx + wd // 2 + 2, by - ht)])
+        for x in range(bx - wd // 2 + 4, bx + wd // 2 - 5, 8):
+            for y in range(by - ht + 4, by - 10, 9):
+                surf.fill((255, 222, 130), (x, y, 4, 5))
+        if self.tier == 3:
+            for x in (bx - 8, bx + 6):
+                surf.fill((240, 236, 226), (x, by - 16, 2, 16))
+        surf.fill(shade(col, 0.4), (bx - 2, by - 8, 5, 8))
+        for i in range(8):
+            x, y = 94 + (i % 4) * 56, 20 + (i // 4) * 41
+            r, on, open_ = self.rooms[i], self.sel == i + 1, i < self.slots()
+            pygame.draw.rect(surf, ((70, 62, 96) if on else (50, 46, 80)) if open_ else (34, 34, 62), (x, y, 54, 39), border_radius=3)
+            pygame.draw.rect(surf, (255, 255, 255) if on else (90, 90, 130) if open_ else (48, 48, 80), (x, y, 54, 39), 1, border_radius=3)
+            if r:
+                for j, l in enumerate(wrap(ROOMS[r[0]]["name"], 12)):
+                    text(surf, l, x + 27 - len(l) * 2, y + 7 + j * 7, (250, 250, 240))
+                for j in range(r[1]):
+                    surf.fill((250, 214, 110), (x + 27 - r[1] * 3 + j * 6, y + 25, 4, 4))
+                for j in range(3):                       # its three furniture spots
+                    surf.fill((150, 200, 250) if r[2][j] else (40, 40, 70), (x + 18 + j * 7, y + 33, 5, 2))
+                if PAINTS[r[3]][1]:
+                    surf.fill(PAINTS[r[3]][1], (x + 3, y + 3, 5, 5))
+            elif open_:
+                text(surf, "EMPTY", x + 17, y + 12, (130, 130, 170))
+                text(surf, "+", x + 25, y + 22, (250, 214, 110) if int(t * 2) % 2 else (150, 130, 80))
+            else:
+                text(surf, "LOCKED", x + 15, y + 16, (70, 70, 104))
+
+    # ---- keeping it ----
+    def dump(self):
+        return {"tier": self.tier, "rooms": self.rooms, "style": self.style}
+
+    def load(self, d):
+        if not isinstance(d, dict):
+            return
+        try:
+            self.tier = clamp(int(d.get("tier", 0)), 0, len(HOMES) - 1)
+            rooms = [([r[0], clamp(int(r[1]), 1, 3), [(f if f in FURNI else None) for f in (list(r[2]) + [None] * 3)[:3]] if len(r) > 2 else [None] * 3,
+                       int(r[3]) % len(PAINTS) if len(r) > 3 else 0] if r and r[0] in ROOMS else None) for r in d.get("rooms", [])]
+            self.style = clamp(int(d.get("style", self.tier)), 0, self.tier)
+            self.rooms = (rooms + [None] * 8)[:8]
+            self.due = self.tier > 0
         except (TypeError, ValueError, KeyError, IndexError):
             pass
 
@@ -6006,6 +7182,41 @@ def main():
             L.decide(L.options()[L.pick])
         elif k == "crown":
             L.crown = v
+        elif k == "page":
+            L.page = int(v)
+        elif k == "cam":
+            world.cam = int(v)
+        elif k == "tier":
+            L.house.tier, L.house.due = int(v), True
+        elif k == "rooms":
+            for i, s in enumerate(v.split("+")):
+                kind, _, lv = s.partition(":")
+                L.house.rooms[i] = [kind, int(lv[:1] or 1), [None, None, None], int(lv[1:2] or 0)]
+        elif k == "furni":
+            for i, s in enumerate(v.split("+")):
+                L.house.rooms[0][2][i] = s or None
+        elif k == "hsel":
+            L.house.sel = int(v)
+        elif k == "room":
+            world.man.script = world.man.act_room(v)
+        elif k == "errand":
+            world.man.script = world.man.act_errand(*v.split(":"))
+        elif k == "fsel":
+            L.folk.sel = int(v)
+        elif k == "xp":
+            L.folk.learn(float(v))
+        elif k == "want":
+            for s in v.split("+"):
+                pid, _, i = s.partition(":")
+                L.folk.want[pid] = [int(i or 0), 3]
+        elif k == "bond":
+            for s in v.split("+"):
+                pid, _, n = s.partition(":")
+                L.folk.bond[pid] = float(n)
+        elif k == "mgr":
+            for s in v.split("+"):
+                sid, _, pid = s.partition(":")
+                L.folk.mgr[sid] = pid
     if ARGS.act:
         m = world.man
         name, _, arg = ARGS.act.partition(":")
@@ -6031,6 +7242,8 @@ def main():
                 elif typing is None:
                     if "E" in chars and not calib:
                         life.open, life.scroll, pressed = True, None, []
+                    elif "V" in chars and not calib:
+                        world.next_cam()
                     elif "T" in chars and not calib:
                         typing = ""
                         pressed = []
@@ -6047,7 +7260,7 @@ def main():
                     cur[0], cur[1] = mouse
                     cur_t = 4.0
                 if clicked:
-                    world.click(*cur)
+                    world.click(*world.to_scene(*cur))
                 for k in pressed:
                     if k == "esc":
                         raise KeyboardInterrupt
@@ -6064,14 +7277,15 @@ def main():
                             save_state(world, cal)
                         else:
                             cur_t = 4.0
-                            world.click(*cur)
+                            world.click(*world.to_scene(*cur))
                     elif k == "tab":
                         ts = world.targets()
                         if ts:
+                            sc = world.to_scene(*cur)
                             i = int(cur_t > 0) and next((i for i, t in enumerate(ts)
-                                                         if abs(t[2] - cur[0]) + abs(t[3] - cur[1]) < 3), -1) + 1
+                                                         if abs(t[2] - sc[0]) + abs(t[3] - sc[1]) < 3), -1) + 1
                             t = ts[i % len(ts)]
-                            cur[0], cur[1] = t[2], t[3]
+                            cur[0], cur[1] = [clamp(v, 0, lim - 1) for v, lim in zip(world.to_screen(t[2], t[3]), (W, H))]
                             cur_t = 4.0
                     elif k == "flip":
                         tilt.flip = not tilt.flip
@@ -6115,7 +7329,7 @@ def main():
                     text(screen, l, 160 - len(l) * 2, 76 + i * 8, INK)
             elif hint_t > 0 and not HEADLESS and not world.life.open:
                 text(screen, "ARROWS + ENTER: FIX   E: EMPIRE", 4, 150, (150, 150, 180))
-                text(screen, "TAB: NEXT  T: TALK  ESC: QUIT", 4, 158, (150, 150, 180))
+                text(screen, "TAB: NEXT  T: TALK  V: CAMERA  ESC: QUIT", 4, 158, (150, 150, 180))
 
             if typing is not None:
                 pygame.draw.rect(screen, (20, 20, 44), (2, H - 12, W - 4, 10), border_radius=2)
