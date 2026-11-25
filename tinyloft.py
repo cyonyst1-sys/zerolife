@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -698,7 +698,11 @@ LANTERN = (290, 33)                 # where it hangs from the branch of the old 
 FLIES = [(16, 60), (22, 90), (18, 126), (60, 150), (110, 163), (30, 160), (250, 162), (296, 148), (314, 100),
          (300, 62), (252, 22), (214, 26), (160, 8), (60, 24)]
 EMBERS = [(20, 128), (52, 146), (92, 163), (296, 150), (268, 161)]
-GLAMPS = [(124, 109), (159, 50)]    # garden lamps
+GLAMPS = [(124, 109), (159, 50), (-7, 108), (30, 110.5), (78, 110.5), (159, 98), (159, 18)]    # garden lamps
+# wall lights indoors (on with the house lights): where the shade is on screen
+SCONCES = [P(127.5, 0, 37), P(34, 0, 46), P(0, 56.5, 45), P(56, 17, 22), P(0, 99, 40)]
+STRIP = (P(81, 1.5, 26.6), P(99, 1.5, 26.6))      # the light under the kitchen shelf
+PORCH = P(RX + 0.5, -2, 36)                       # outside lamp on the end of the brick wall
 OWL = P(-2, 74, RH)
 CLOCK = (43, 50)                    # on the brick wall: x, z
 CLOCK_FACE = [P(CLOCK[0] + math.cos(i * 0.5236) * 5, 0, CLOCK[1] + math.sin(i * 0.5236) * 5.8) for i in range(12)]
@@ -2113,6 +2117,16 @@ class World:
         poly(s, shade(cap, 0.86), [P(-4, -4, RH), P(0, 0, RH), P(0, RY, RH), P(-4, RY, RH)], shade(cap, 0.45))
         poly(s, cap, [P(-4, -4, RH), P(RX, -4, RH), P(RX, 0, RH), P(0, 0, RH)], shade(cap, 0.45))
         pygame.draw.line(s, shade(BRICK, 0.4), P(0, 0, 0), P(0, 0, RH))
+        # wall-light brackets (their shades are drawn lit or unlit each frame) and the porch lamp
+        for px, py in SCONCES:
+            s.fill((50, 42, 56), (px, py + 3, 1, 3))
+            s.fill((50, 42, 56), (px - 1, py + 5, 3, 1))
+        px, py = PORCH
+        s.fill((40, 36, 52), (px, py - 2, 3, 1))
+        s.fill((255, 206, 120), (px, py - 1, 3, 4))
+        em.fill((255, 214, 130), (px, py - 1, 3, 4))
+        em.fill((255, 246, 204), (px + 1, py, 1, 2))
+        add_glow(fxs, (px + 1, py + 1), 15, (96, 58, 20))
         # an owl on the wall
         ox, oy = OWL
         s.fill((104, 78, 66), (ox - 2, oy - 6, 5, 6))
@@ -2335,7 +2349,7 @@ class World:
     def relight(self, day, flick, lamp_on, lx, ly, tv_lit, wet, fairy, hero=None):
         """Rebuild the light map (multiplied over the scene) and the glow layer (added on top)."""
         t = self.t
-        amb = mix((40, 50, 106), (88, 84, 132), day)
+        amb = mix((54, 64, 122), (98, 92, 140), day)
         if self.lights_off:
             amb = shade(amb, 0.82)
         if flick:
@@ -2419,6 +2433,13 @@ class World:
         add_light(lm, P(2, 80, 44), 26, 26, (30, 44, 84) if day < 0.5 else (84, 56, 40))
         for x, y in GLAMPS:
             add_light(lm, P(x, y, YZ), 24, 10, (150, 96, 40))
+        add_light(lm, (PORCH[0] + 4, PORCH[1] + 12), 26, 24, (150, 98, 44))
+        if fairy and not self.lights_off:              # the wall lights and the kitchen strip
+            for px, py in SCONCES:
+                add_light(lm, (px, py + 6), 30, 24, (150, 102, 54))
+                add_glow(fx, (px, py + 1), 9, (96, 60, 22))
+            add_light(lm, P(90, 8, 15), 34, 16, (150, 124, 84))
+            add_glow(fx, P(90, 2, 25), 12, (60, 46, 24))
         if hero:
             add_light(lm, hero, 26, 22, (96, 100, 124))
 
@@ -2832,6 +2853,13 @@ class World:
 
         # things that glow by themselves, and things in front of the light
         surf.blit(self.emis, (0, 0))
+        on = fairy and not self.lights_off
+        for px, py in SCONCES:
+            surf.fill((255, 214, 130) if on else (120, 112, 124), (px - 1, py, 3, 3))
+            if on:
+                surf.fill((255, 246, 204), (px, py + 1, 1, 1))
+        if on:
+            pygame.draw.line(surf, (255, 236, 190), STRIP[0], STRIP[1])
         ox, oy = OWL
         if int(t * 10) % 53 > 1:                                 # the owl blinks
             surf.fill((255, 224, 96), (ox - 1, oy - 5, 1, 1))
