@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -775,7 +775,7 @@ class Item(Body):
 
     def away(self):
         return (self.state == "ok" and not self.hung and not self.held and
-                abs(self.x - self.home[0]) + abs(self.y - self.home[1]) + abs(self.z - self.home[2]) > 5)
+                abs(self.x - self.home[0]) + abs(self.y - self.home[1]) + abs(self.z - self.home[2]) > 10)
 
 
 # --------------------------------------------------------------------------
@@ -826,6 +826,7 @@ class Man:
 
     def __init__(self, world):
         self.visit_t = 75.0
+        self.tidy_t = 0.0
         self.w = world
         self.x, self.y, self.z = 88.0, 30.0, 0.0
         self.level = "floor"
@@ -1210,9 +1211,11 @@ class Man:
         low = min(self.need, key=self.need.get)
         if self.need[low] < 30:
             return {"food": self.act_eat, "rest": self.act_sleep, "fun": self.act_tv, "wash": self.act_shower}[low]()
-        for it in w.items.values():
-            if it.away() and it.speed() < 4 and w.level():
-                return self.act_tidy(it.name)
+        if self.tidy_t <= 0 and w.calm > 6:
+            for it in w.items.values():
+                if it.away() and it.speed() < 4:
+                    self.tidy_t = 25.0
+                    return self.act_tidy(it.name)
         if w.tank_level < 0.45:
             return self.act_fish()
         if self.work_t <= 0:
@@ -1267,6 +1270,7 @@ class Man:
         if not self.away:
             self.work_t -= dt
             self.visit_t -= dt
+        self.tidy_t -= dt
         if w.party:                                     # out at his friend's: the party moves him
             self.need["fun"] = min(100, self.need["fun"] + 4 * dt)
             return
@@ -1568,6 +1572,7 @@ class World:
         self.lant, self.lantv = 0.0, 0.0     # the lantern in the tree outside
         self.fly_o, self.fly_v = [0.0, 0.0], [0.0, 0.0]
         self.party = None                    # set while he is out at his friend's house
+        self.calm = 0.0                      # seconds the house has been level and still
         self.cache = {}                      # furniture and other static pieces, painted once
         self.scratch = pygame.Surface((W, H))
         self.scratch.set_colorkey(KEY)
@@ -1668,6 +1673,10 @@ class World:
         self.shake = max(self.shake - dt * 2.5, jm)
         gx, gy, gz = g
         acc = [(g[i] + jerk[i] * 0.6) * GRAV for i in range(3)]
+        gh = math.hypot(gx, gy)
+        k = min(1.0, (gh - 0.22) / gh * 1.3) if gh > 0.22 else 0.0
+        acc_it = [(gx * k + jerk[0] * 0.6) * GRAV, (gy * k + jerk[1] * 0.6) * GRAV, acc[2]]
+        self.calm = self.calm + dt if (gz < -0.9 and self.shake < 0.3) else 0.0
         if self.party:                                  # home stands still while he is out
             self.man.update(dt)
             self.party.update(dt)
@@ -1689,7 +1698,7 @@ class World:
                     it.hung = False
                     it.vx, it.vy = gx * 40, 12
                 continue
-            hit = step_body(it, acc, dt)
+            hit = step_body(it, acc_it, dt)
             if hit > it.frag:
                 self.smash(it)
         step_body(self.ball, acc, dt)
@@ -3761,6 +3770,8 @@ class Tilt:
                 sd, so = remap_pitch(dot(gv, self.u), -dot(gv, self.f))
                 g = world_from_screen(-dot(gv, r), sd, so)
                 j = tuple(a[i] - self.lp[i] for i in range(3))
+                jm = math.sqrt(j[0] ** 2 + j[1] ** 2 + j[2] ** 2)
+                j = tuple(c * (jm - 0.35) / jm for c in j) if jm > 0.35 else (0.0, 0.0, 0.0)
                 jerk = world_from_screen(-dot(j, r), dot(j, self.u), -dot(j, self.f))
                 return g, jerk
         # simulated: J/L roll, I/M pitch, U flip, K shake
