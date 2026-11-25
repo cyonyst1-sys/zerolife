@@ -13,6 +13,11 @@ house stands on a walled garden terrace with a fence, a vegetable bed, garden
 lamps, a chimney and an owl on the wall. The clock on the brick wall shows the
 real time.
 
+Every few minutes he goes out to a friend's house, and the view follows him: a
+dark modern place with glowing windows, where four friends and he watch the
+match and cheer, drift to the bar for drinks, and pile onto the couch for video
+games. Tilting and shaking throws all five of them about. Then he walks home.
+
 The lamp is a real light: each side of the furniture is lit by how squarely it
 faces the bulb, things throw shadows away from it, and all of that swings when
 the lamp swings. The man is a jointed figure 25 pixels tall. His arms and legs
@@ -41,10 +46,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/tinyloft_0.1.2-1_all.deb` over and install it:
+Copy `dist/tinyloft_0.2.0-1_all.deb` over and install it:
 
-    scp dist/tinyloft_0.1.2-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/tinyloft_0.1.2-1_all.deb
+    scp dist/tinyloft_0.2.0-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/tinyloft_0.2.0-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Tiny Loft" appears on the home screen. To run it from a shell instead:
