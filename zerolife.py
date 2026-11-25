@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tiny Loft - a little man who lives in your CardputerZero.
+"""Zero Life - a little man who lives in your CardputerZero.
 
 An isometric studio loft the size of the screen. He eats, watches TV, sleeps,
 showers, goes to work and comes home. Tilt or shake the device and his fish
@@ -21,12 +21,12 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.2.4"
+VERSION = "0.3.0"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
 # --------------------------------------------------------------------------
-ap = argparse.ArgumentParser(description="Tiny Loft")
+ap = argparse.ArgumentParser(description="Zero Life")
 ap.add_argument("--fb", nargs="?", const="/dev/fb0", default=None, help="draw to a Linux framebuffer")
 ap.add_argument("--window", action="store_true", help="force a desktop window")
 ap.add_argument("--scale", type=int, default=3, help="window scale")
@@ -65,7 +65,7 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 try:
     import pygame
 except ImportError:
-    sys.stderr.write("Tiny Loft needs pygame:  sudo apt install python3-pygame\n")
+    sys.stderr.write("Zero Life needs pygame:  sudo apt install python3-pygame\n")
     sys.exit(1)
 
 # --------------------------------------------------------------------------
@@ -3916,7 +3916,7 @@ class WindowOut:
     def __init__(self, scale):
         self.scale = scale
         self.win = pygame.display.set_mode((W * scale, H * scale))
-        pygame.display.set_caption("Tiny Loft  -  J/L tilt  I/M pitch  U flip  K shake  mouse to click")
+        pygame.display.set_caption("Zero Life  -  J/L tilt  I/M pitch  U flip  K shake  mouse to click")
 
     def show(self, surf):
         pygame.transform.scale(surf, self.win.get_size(), self.win)
@@ -3925,16 +3925,19 @@ class WindowOut:
 
 # --------------------------------------------------------------------------
 STATE_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config"),
-                         "tinyloft")
+                         "zerolife")
 STATE = os.path.join(STATE_DIR, "state.json")
 
 
 def load_state():
-    try:
-        with open(STATE) as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    # the game used to be called Tiny Loft: carry an old save over
+    for path in (STATE, STATE.replace("zerolife", "tinyloft")):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            pass
+    return {}
 
 
 def save_state(world, cal):
@@ -4101,7 +4104,7 @@ if __name__ == "__main__":
         # the launcher hides what an app prints, so leave the reason where it can be found
         import traceback
         try:
-            with open("/tmp/tinyloft.log", "a") as f:
+            with open("/tmp/zerolife.log", "a") as f:
                 f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + " ".join(sys.argv) + "\n" + traceback.format_exc() + "\n")
         except OSError:
             pass

@@ -1,4 +1,4 @@
-# Tiny Loft
+# Zero Life
 
 A little man who lives in your M5Stack CardputerZero. He has an isometric studio
 loft the size of the screen (320x170) and gets on with his life: fridge, TV on
@@ -25,12 +25,12 @@ the lamp swings. The man is a jointed figure 25 pixels tall. His arms and legs
 swing when he walks, and when you throw him about they are loose chains that
 trail behind him and flop.
 
-One file, `tinyloft.py`. Only dependency: `pygame`.
+One file, `zerolife.py`. Only dependency: `pygame`.
 
 ## Try it on a PC
 
     pip install pygame
-    python tinyloft.py
+    python zerolife.py
 
 | Key | Does |
 | --- | --- |
@@ -47,14 +47,14 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/tinyloft_0.2.4-1_all.deb` over and install it:
+Copy `dist/zerolife_0.3.0-1_all.deb` over and install it:
 
-    scp dist/tinyloft_0.2.4-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/tinyloft_0.2.4-1_all.deb
+    scp dist/zerolife_0.3.0-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.3.0-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
-seconds; "Tiny Loft" appears on the home screen. To run it from a shell instead:
-`python3 tinyloft.py --fb /dev/fb0`.
+seconds; "Zero Life" appears on the home screen. To run it from a shell instead:
+`python3 zerolife.py --fb /dev/fb0`.
 
 On the device the tilt keys are replaced by the real BMI270. The first time,
 press **C** and follow the two prompts (lay it flat, then hold it upright) so the
@@ -75,11 +75,11 @@ The store is a GitHub pull-request pipeline against
 2. Edit `app-builder.json`: `maintainer`, `store.source_repo`,
    `store.author.github`, `store.author.display_name`. Put your name in
    `LICENSE`. Leftover placeholder text is rejected automatically.
-3. `python build_deb.py` writes `dist/tinyloft_<version>-1_all.deb`. It warns
+3. `python build_deb.py` writes `dist/zerolife_<version>-1_all.deb`. It warns
    until step 2 is done.
 4. Submit, either way:
    - **Web:** sign in with GitHub at <https://dev.cardputer.cc>, drag the `.deb`
-     in, fill the listing (icon `store/tinyloft.png`, screenshots in
+     in, fill the listing (icon `store/zerolife.png`, screenshots in
      `store/screenshots/`, tick the IMU permission). The portal opens the pull
      request for you.
    - **CLI:** `czdev publish` from
@@ -89,16 +89,16 @@ The store is a GitHub pull-request pipeline against
    also gets a human review **with a demo on a real device**, so record a short
    video of it running.
 6. For updates, raise `version` in `app-builder.json` and repeat. The package
-   name `tinyloft` belongs to whoever uploads it first.
+   name `zerolife` belongs to whoever uploads it first.
 
 ## Tested on a real CardputerZero
 
-Version 0.1.1 was sideloaded onto a CardputerZero and started from the home
+Version 0.1.1 (then called Tiny Loft) was sideloaded onto a CardputerZero and started from the home
 screen. The picture is the right way up, the keys move the cursor and click,
 and the calibrated accelerometer tilts, sloshes and throws things as intended.
 (0.1.0 froze when started from the launcher because it tried to open a desktop
 window; an installed copy now always draws straight to the screen. If it ever
-fails to start, the reason is written to `/tmp/tinyloft.log` on the device.)
+fails to start, the reason is written to `/tmp/zerolife.log` on the device.)
 
 Still not checked:
 
@@ -117,7 +117,7 @@ Still not checked:
 
 ## Files
 
-    tinyloft.py           the game
+    zerolife.py           the game
     app-builder.json      store metadata, read by build_deb.py and czdev
     build_deb.py          builds the .deb (no dpkg needed, works on Windows)
     store/                icon (256x256) and screenshots (320x170)

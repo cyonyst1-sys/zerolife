@@ -1,7 +1,7 @@
 {
-  "app_name": "Tiny Loft",
-  "package_name": "tinyloft",
-  "version": "0.2.4",
+  "app_name": "Zero Life",
+  "package_name": "zerolife",
+  "version": "0.3.0",
   "revision": "1",
   "architecture": "all",
   "maintainer": "cyonyst1-sys <cyonyst1-sys@users.noreply.github.com>",
@@ -9,7 +9,7 @@
   "description": "A little man who lives in your CardputerZero. Tilt and shake his loft.",
   "store": {
     "summary": "A little man lives in your screen. Tilt and shake his loft.",
-    "description": "Tiny Loft is a pocket housemate. A small man lives in an isometric studio loft the size of your screen: he raids the fridge, watches TV from the couch, sleeps in the loft bed, showers, feeds his fish, goes to work and comes home with groceries. The accelerometer is wired into his house. Tilt the device and the fish tank sloshes and spills, the lamp swings and things slide off their shelves. Shake it or flip it over and the lights flicker, things smash and he goes flying. He notices what you broke and goes to look at the pieces. Move the cursor to the dotted outline and press Enter to give him a new one. Some evenings he goes round to a friend's house, where a crowd watches the match, gathers at the bar and plays video games, and you can shake them all about too.",
+    "description": "Zero Life is a pocket housemate. A small man lives in an isometric studio loft the size of your screen: he raids the fridge, watches TV from the couch, sleeps in the loft bed, showers, feeds his fish, goes to work and comes home with groceries. The accelerometer is wired into his house. Tilt the device and the fish tank sloshes and spills, the lamp swings and things slide off their shelves. Shake it or flip it over and the lights flicker, things smash and he goes flying. He notices what you broke and goes to look at the pieces. Move the cursor to the dotted outline and press Enter to give him a new one. Some evenings he goes round to a friend's house, where a crowd watches the match, gathers at the bar and plays video games, and you can shake them all about too.",
     "categories": [
       "Games"
     ],
@@ -21,14 +21,14 @@
       "store/screenshots/5-hello.png",
       "store/screenshots/6-friends.png"
     ],
-    "icon": "store/tinyloft.png",
+    "icon": "store/zerolife.png",
     "license": "MIT",
-    "source_repo": "https://github.com/cyonyst1-sys/tinyloft",
+    "source_repo": "https://github.com/cyonyst1-sys/zerolife",
     "author": {
       "github": "cyonyst1-sys",
       "display_name": "cyonyst1-sys"
     },
-    "share_code": "LOFT",
+    "share_code": "ZERO",
     "permissions": {
       "camera": false,
       "microphone": false,

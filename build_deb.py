@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Build the CardputerZero store package for Tiny Loft.
+"""Build the CardputerZero store package for Zero Life.
 
     python build_deb.py
 
 Needs nothing but Python (no dpkg), so it works on Windows, macOS and Linux.
-Reads app-builder.json and writes dist/tinyloft_<version>-<rev>_<arch>.deb with
+Reads app-builder.json and writes dist/zerolife_<version>-<rev>_<arch>.deb with
 the layout the APPLaunch launcher expects:
 
-    /usr/share/APPLaunch/bin/tinyloft                 the game (executable)
-    /usr/share/APPLaunch/applications/tinyloft.desktop
-    /usr/share/APPLaunch/share/images/tinyloft.png    launcher icon
+    /usr/share/APPLaunch/bin/zerolife                 the game (executable)
+    /usr/share/APPLaunch/applications/zerolife.desktop
+    /usr/share/APPLaunch/share/images/zerolife.png    launcher icon
 """
 import gzip
 import hashlib
@@ -41,7 +41,7 @@ def read(path):
         return f.read()
 
 
-game = read("tinyloft.py").replace(b"\r\n", b"\n")
+game = read("zerolife.py").replace(b"\r\n", b"\n")
 files = [  # (path in package, bytes, mode)
     ("usr/share/APPLaunch/bin/" + PKG, game, 0o755),
     ("usr/share/APPLaunch/applications/%s.desktop" % PKG, DESKTOP.encode(), 0o644),
@@ -88,6 +88,8 @@ Architecture: {arch}
 Maintainer: {maint}
 Installed-Size: {size}
 Depends: {deps}
+Conflicts: tinyloft
+Replaces: tinyloft
 Section: APPLaunch
 Priority: optional
 Homepage: {home}
