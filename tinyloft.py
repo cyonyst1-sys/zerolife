@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -3329,8 +3329,6 @@ class Party:
                              P(0, mid, z1) if axis == "x" else P(mid, 0, z1))
             pts = ([P(0, a0, z0), P(0, a1, z0), P(0, a1, z1), P(0, a0, z1)] if axis == "x"
                    else [P(a0, 0, z0), P(a1, 0, z0), P(a1, 0, z1), P(a0, 0, z1)])
-            pygame.draw.polygon(em, GLOW, pts)
-            pygame.draw.polygon(em, (60, 40, 40), pts, 1)
             self.glows.append((pts, pool, P(0, mid, (z0 + z1) / 2) if axis == "x" else P(mid, 0, (z0 + z1) / 2)))
 
         def walls(xmax, ymax, z0, z1):
@@ -3382,7 +3380,6 @@ class Party:
         wall_rect(s, (50, 50, 72), "y", 8, 48, 26, 33, ink)                                        # cupboards over it
         pygame.draw.line(s, (255, 236, 190), P(9, 0.5, 25.6), P(47, 0.5, 25.6))
         kb = [P(8, 0, 15), P(48, 0, 15), P(48, 0, 25), P(8, 0, 25)]
-        pygame.draw.polygon(em, (255, 164, 76), kb)
         self.glows.append((kb, (28, 13, 6), P(28, 0, 20)))
         wall_rect(s, (22, 22, 34), "y", 70, 98, 10, 34, (12, 12, 20))                              # tv frame
         wall_rect(s, (50, 50, 70), "y", 100, 108, 0, 31, ink)                                      # front door
@@ -3406,7 +3403,7 @@ class Party:
         wall_rect(s, (22, 22, 34), "y", 12, 42, F1 + 8, F1 + 30, (12, 12, 20))
         wall_rect(s, (250, 110, 180), "y", 50, 62, F1 + 20, F1 + 23)                               # a neon strip
         np_ = [P(50, 0, F1 + 20), P(62, 0, F1 + 20), P(62, 0, F1 + 23), P(50, 0, F1 + 23)]
-        pygame.draw.polygon(em, (255, 130, 200), np_)
+        self.glows.append((np_, (56, 6, F1 + 1), P(56, 0, F1 + 21)))
         for i in range(6):                                                                         # stairs up to the bedroom
             box(s, 68 - (i + 1) * 3.6, 0, F1, 68 - i * 3.6, 8, F1 + (i + 1) * 6, (96, 96, 126), bands=1)
         s.blit(sh, (0, 0))
