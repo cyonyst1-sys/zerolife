@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -1252,6 +1252,60 @@ class Man:
         self.say("WHAT HAPPENED HERE?!" if self.w.broke_away else random.choice(["GOOD NIGHT OUT", "HOME AGAIN"]))
         yield from self.wait(1.4)
 
+    def act_dog(self):
+        """Fuss the dog, then a game of fetch across the floor."""
+        w = self.w
+        d, ball = w.dog, w.ball
+        if not d.visible or d.body:
+            return
+        yield from self.go("F")
+        self.say(random.choice(["COME HERE, BOY!", "WHO WANTS TO PLAY?", "HERE, BOY!"]), 1.8)
+        d.lying, d.target = False, (clamp(self.x - 7, 8, 142), clamp(self.y + 2, 24, 94))
+        t = 4.0
+        while t > 0 and math.hypot(d.x - self.x, d.y - self.y) > 10 and not d.body:
+            t -= self.dt
+            yield
+        self.face = 1 if (d.x - d.y) > (self.x - self.y) else -1
+        d.bark()
+        self.say(random.choice(["WHO'S A GOOD BOY?", "GOOD BOY!", "THAT'S THE SPOT, EH?"]), 2.2)
+        t = 3.5
+        while t > 0:                                    # a good scratch behind the ears
+            t -= self.dt
+            self.pose, self.view = "look", "side"
+            d.lying, d.target = False, None
+            if random.random() < self.dt * 3:
+                w.parts.append([d.x, d.y, 8, random.uniform(-4, 4), random.uniform(-4, 4), 14, 1.0, (250, 120, 150), 1])
+            yield
+        self.pose = "stand"
+        d.fetch = True
+        for i in range(3):
+            if d.body or not d.visible:
+                break
+            self.cheer = 0.5
+            self.say(random.choice(["FETCH!", "GO GET IT!", "READY?"]), 1.2)
+            ball.x, ball.y, ball.z = self.x + 3, self.y, 14.0
+            ball.vx, ball.vy, ball.vz = random.uniform(-90, -20), random.uniform(-40, 10), 50.0
+            d.target, d.has_ball = "ball", False
+            t = 7.0
+            while t > 0 and not d.body:
+                t -= self.dt
+                if not d.has_ball and math.hypot(ball.x - d.x, ball.y - d.y) < 6 and ball.z < 8:
+                    d.has_ball, d.target = True, None
+                if d.has_ball:
+                    ball.x, ball.y, ball.z, ball.vx, ball.vy, ball.vz = d.x, d.y, d.z, 0, 0, 0
+                    if math.hypot(self.x - d.x, self.y - d.y) < 27:
+                        d.has_ball = False
+                        d.bark()
+                        self.say(random.choice(["GOOD BOY!", "WELL DONE", "AGAIN?", "DROP IT. DROP."]), 1.2)
+                        yield from self.wait(0.8)
+                        break
+                yield
+        d.fetch, d.has_ball, d.target = False, False, None
+        self.need["fun"] = min(100, self.need["fun"] + 30)
+        self.mood = min(100, self.mood + 8)
+        self.say(random.choice(["THAT'S ENOUGH FOR NOW", "GOOD GAME", "YOU WIN, BOY"]), 1.6)
+        yield from self.wait(1.0)
+
     def act_knock(self):
         """Someone tapped on the outside of his world."""
         self.view, self.pose = "front", "stand"
@@ -1336,7 +1390,9 @@ class Man:
             self.script = self.act_fish()
         elif has("CLEAN", "MOP", "TIDY") and w.puddles:
             self.script = self.act_mop()
-        elif has("DOG", "WALK", "PARK") and hasattr(self, "act_park"):
+        elif has("DOG", "FETCH", "PET", "PLAY", "BOY", "BALL"):
+            self.script = self.act_dog()
+        elif has("WALK", "PARK") and hasattr(self, "act_park"):
             self.say("WALKIES!")
             self.script = self.act_park()
         elif has("SHOP", "STORE", "BUY") and hasattr(self, "act_store"):
@@ -1492,7 +1548,7 @@ class Man:
             self.say("I NEED TO EARN SOME MONEY", 1.8)
             return self.act_work()
         broken = [n for n, it in w.items.items() if it.state == "broken"] + ([] if w.lamp_ok else ["lamp"])
-        opts = [(self.act_wander, 3.0), (self.act_tap, 2.0), (self.act_fish, 1.2), (self.act_tv, 1.2),
+        opts = [(self.act_dog, 2.2 if (w.dog.visible and not w.dog.body) else 0.0), (self.act_wander, 3.0), (self.act_tap, 2.0), (self.act_fish, 1.2), (self.act_tv, 1.2),
                 (self.act_window, 0.8), (self.act_play, 1.0)]
         if self.need["food"] < 70:
             opts.append((self.act_eat, 1.0))
@@ -1509,6 +1565,7 @@ class Man:
         self.wake()
         self.visible, self.hidden, self.big = True, False, False
         self.carry = None
+        w.dog.fetch = w.dog.has_ball = False
         if self.holding:
             self.holding.held = False
             self.holding.x, self.holding.y, self.holding.z = self.x, self.y, self.z + 8
@@ -3164,6 +3221,9 @@ class World:
         if m.visible:
             sx, sy = P(m.x, m.y, m.z)
             out.append(("man", "man", sx, sy - 10, 12))
+        if self.dog.visible:
+            sx, sy = P(self.dog.x, self.dog.y, self.dog.z)
+            out.append(("dog", "dog", sx, sy - 4, 9))
         return out
 
     def click(self, cx, cy):
@@ -3186,7 +3246,15 @@ class World:
                 self.man.say(random.choice(["WHO'S THERE?", "DID YOU HEAR THAT?"]), 1.6)
             return
         _, kind, name = best
-        if kind == "crack":
+        if kind == "dog":                               # a pat on the head from you
+            d = self.dog
+            d.lying = False
+            d.bark(random.choice(["WOOF!", "ARF!", "WOOF WOOF!"]))
+            for _ in range(4):
+                self.parts.append([d.x, d.y, 8, random.uniform(-6, 6), random.uniform(-6, 6), 16, 1.0, (250, 120, 150), 1])
+            if random.random() < 0.5 and not self.man.away and not self.man.sleeping:
+                self.man.say(random.choice(["HE LIKES YOU", "GOOD BOY", "WANT TO PLAY, BOY?"]), 1.6)
+        elif kind == "crack":
             if name < len(self.cracks):
                 self.cracks.pop(name)
                 self.spark(60, 30, 40, (255, 240, 170), 4)
