@@ -77,6 +77,16 @@ he needs to or when you send him. Every room has three free spots for furniture 
 shop (plant, rug, side table, armchair, bookcase, statue, arcade cabinet, piano) and walls
 that can be repainted. The main room can wear the finish of any house he has lived in.
 
+New in 0.7, the main room is yours to do up. On the house page, with the house itself
+selected: *Replace* swaps the sofa, fridge, woodwork, floor, walls or feature wall for
+another (a bigger house brings a longer list); *Shop* buys a piece of furniture and drops
+you into the room with it on the cursor. Move it with the arrows, Enter to put it down
+(the outline is green where it fits and red where it would block a wall, other furniture
+or where he walks), Tab to sell it, Esc when done. *Arrange the furniture* lets you pick
+pieces up again and move them. They are solid: things thrown about the room bounce off
+them. He notices new pieces and stops to admire them. The room holds 2, 4, 6 or 8 pieces
+of his own, by house.
+
 The lamp is a real light: each side of the furniture is lit by how squarely it
 faces the bulb, things throw shadows away from it, and all of that swings when
 the lamp swings. The man is a jointed figure 25 pixels tall. His arms and legs
@@ -106,10 +116,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/zerolife_0.6.0-1_all.deb` over and install it:
+Copy `dist/zerolife_0.7.0-1_all.deb` over and install it:
 
-    scp dist/zerolife_0.6.0-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.6.0-1_all.deb
+    scp dist/zerolife_0.7.0-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.7.0-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Zero Life" appears on the home screen. To run it from a shell instead:

@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -1348,6 +1348,23 @@ class Man:
         yield from self.come_back()
         yield from self.wait(0.6)
 
+    def act_admire(self):
+        """A moment with one of the things he owns."""
+        hs = self.w.life.house
+        if not hs.pieces:
+            return
+        k, x, y = random.choice(hs.pieces)
+        yield from self.go(min(NODES, key=lambda n: math.hypot(NODES[n][0] - x, NODES[n][1] - y)))
+        self.face = 1 if (x - y) > (self.x - self.y) else -1
+        self.pose = "look"
+        self.say(random.choice(ADMIRE[k]), 2.6)
+        if k == "piano":
+            for i in range(4):
+                play("talk%d" % i, 0.0)
+                yield from self.wait(0.5)
+        yield from self.wait(2.4)
+        self.pose = "stand"
+
     def act_deal(self, sid):
         """He has bought something: off to sign for it."""
         self.cheer = 1.5
@@ -1629,7 +1646,7 @@ class Man:
             return self.act_work()
         broken = [n for n, it in w.items.items() if it.state == "broken"] + ([] if w.lamp_ok else ["lamp"])
         opts = [(self.act_dog, 2.2 if (w.dog.visible and not w.dog.body) else 0.0), (self.act_wander, 3.0), (self.act_tap, 2.0), (self.act_fish, 1.2), (self.act_tv, 1.2),
-                (self.act_window, 0.8), (self.act_play, 1.0), (self.act_muse, 0.9),
+                (self.act_window, 0.8), (self.act_play, 1.0), (self.act_muse, 0.9), (self.act_admire, 1.2 if w.life.house.pieces else 0.0),
                 (lambda: self.act_room(random.choice(w.life.house.built())), 2.0 if (w.life.house.built() and w.level()) else 0.0)]
         if self.need["food"] < 70:
             opts.append((self.act_eat, 1.0))
@@ -1987,6 +2004,7 @@ class World:
         self.cam, self.zoom, self.cam_at = 0, 1.0, [W / 2.0, H / 2.0]     # which camera, and where it has got to
         self.view = (0.0, 0.0, 1.0)          # the corner of the scene on screen, and the magnification
         self.zbuf = pygame.Surface((W, H))
+        self.arr = None                      # set while you are arranging his furniture
         self.g = (0.0, 0.0, -1.0)
         self.jerk = (0.0, 0.0, 0.0)
         self.shake = 0.0
@@ -3374,7 +3392,12 @@ class World:
             focus = P(self.dog.x, self.dog.y, self.dog.z + 4)
         elif who != "room" and m.visible:
             focus = m.head() if m.pose in ("lie", "rag") else P(m.x, m.y, m.z + 10)
-        if focus is None:
+        if self.arr and self.party:                         # he has gone out: stop arranging
+            self.arr_drop()
+            self.arr = None
+        if self.arr:
+            self.draw_arrange(surf)
+        if focus is None or self.arr:
             want, focus = 1.0, (W / 2.0, H / 2.0)
         self.zoom = lerp(self.zoom, want, 0.15)
         self.cam_at = [lerp(self.cam_at[0], focus[0], 0.12), lerp(self.cam_at[1], focus[1], 0.12)]
@@ -3388,6 +3411,76 @@ class World:
         else:
             self.view = (0.0, 0.0, 1.0)
         self.hud(surf)
+
+    # ---- arranging the main room ----
+    def arr_start(self, item=None):
+        self.arr = {"hold": item, "from": None, "new": bool(item), "cur": (160.0, 100.0)}
+        self.cam = 0
+
+    def arr_at(self):
+        """Where on the floor the cursor is pointing."""
+        sx, sy = self.arr["cur"]
+        a, b = (sx - HOME_VIEW[0]) / HOME_VIEW[5], (sy - HOME_VIEW[1]) / HOME_VIEW[6]
+        return float(round((a + b) / 2)), float(round((b - a) / 2))
+
+    def arr_drop(self, sell=False):
+        """Let go of what is held without placing it: back where it was, or back to the shop."""
+        A, hs, m = self.arr, self.life.house, self.man
+        if A["hold"]:
+            if A["new"]:
+                m.coins += FURNI[A["hold"]][1]
+            elif sell:
+                m.coins += FURNI[A["hold"]][1] // 2
+                play("coin")
+            else:
+                hs.pieces.append(A["from"])
+            A["hold"], A["from"], A["new"] = None, None, False
+            hs.solids()
+
+    def arr_key(self, k):
+        A, hs = self.arr, self.life.house
+        x, y = self.arr_at()
+        if k == "esc":
+            self.arr_drop()
+            self.arr = None
+        elif k == "tab":
+            self.arr_drop(True)
+        elif k == "ok":
+            if A["hold"]:
+                if hs.fits(A["hold"], x, y):
+                    hs.pieces.append([A["hold"], x, y])
+                    hs.solids()
+                    play("knock", 0.1)
+                    m = self.man
+                    if A["new"] and not (m.away or m.sleeping or m.body):
+                        m.say(random.choice(["OOH, A %s!", "A %s! FOR ME?", "I'VE ALWAYS WANTED A %s"]) % FURNI[A["hold"]][0], 2.4)
+                    A["hold"], A["from"], A["new"] = None, None, False
+                else:
+                    play("talk0", 0.2)
+            else:
+                sx, sy = A["cur"]
+                near = sorted((math.hypot(P(p[1], p[2], FOOT[p[0]][2] / 2)[0] - sx, P(p[1], p[2], FOOT[p[0]][2] / 2)[1] - sy), i)
+                              for i, p in enumerate(hs.pieces))
+                if near and near[0][0] < 16:
+                    p = hs.pieces.pop(near[0][1])
+                    A["hold"], A["from"] = p[0], p
+                    hs.solids()
+
+    def draw_arrange(self, surf):
+        A, hs = self.arr, self.life.house
+        for k, x, y in hs.pieces:                           # where each piece stands
+            hw, hd = FOOT[k][0], FOOT[k][1]
+            pygame.draw.polygon(surf, (250, 250, 240), [P(x - hw, y - hd), P(x + hw, y - hd), P(x + hw, y + hd), P(x - hw, y + hd)], 1)
+        if A["hold"]:
+            x, y = self.arr_at()
+            hw, hd = FOOT[A["hold"]][0], FOOT[A["hold"]][1]
+            ok = hs.fits(A["hold"], x, y)
+            paint_furni(surf, A["hold"], x, y)
+            pygame.draw.polygon(surf, (120, 230, 140) if ok else (240, 80, 70),
+                                [P(x - hw, y - hd), P(x + hw, y - hd), P(x + hw, y + hd), P(x - hw, y + hd)], 1 if ok else 2)
+        s = ("ENTER: PUT DOWN   TAB: SELL IT   ESC: DONE" if A["hold"] else "ENTER: PICK UP   ESC: DONE") if hs.pieces or A["hold"] else "ESC: DONE"
+        pygame.draw.rect(surf, (20, 20, 44), (W // 2 - len(s) * 2 - 4, H - 13, len(s) * 4 + 7, 11), border_radius=2)
+        text(surf, s, W // 2 - len(s) * 2, H - 10, (250, 250, 240))
 
     def to_scene(self, x, y):
         """A point on the screen, as a point in the picture the camera is looking at."""
@@ -3520,6 +3613,10 @@ class World:
             else:
                 cast_shadow(s, p0, 0, 0, w)
 
+        for k, x, y in self.life.house.pieces:              # rugs lie under everything
+            if k == "rug":
+                piece, at = self.sprite("own_rug_%d_%d" % (x, y), lambda s, x=x, y=y: paint_furni(s, "rug", x, y))
+                surf.blit(piece, at)
         # depth-sorted pass
         slots = [[] for _ in range(len(ORDER) + 1)]
 
@@ -3565,6 +3662,12 @@ class World:
             m.draw(s)
 
         put(b.x, b.y, b.z, ball_fn)
+        for k, x, y in self.life.house.pieces:              # his own furniture
+            if k != "rug":
+                def own_fn(s, k=k, x=x, y=y):
+                    piece, at = self.sprite("own_%s_%d_%d" % (k, x, y), lambda t: paint_furni(t, k, x, y))
+                    s.blit(piece, at)
+                put(x, y, 0.0, own_fn)
         dg = self.dog
         if dg.visible:
             def dog_fn(s):
@@ -5834,6 +5937,9 @@ class Life:
         """Back to the flat.  If there is somewhere to be, he sets off."""
         self.open, self.sure = False, None
         m, F, H = self.w.man, self.folk, self.house
+        if H.arrange:
+            self.w.arr_start(None if H.arrange is True else H.arrange)
+            H.arrange = None
         if self.free() and (F.errand or self.bought or H.go):
             m.interrupt()
             m.script = m.act_errand(*F.errand) if F.errand else m.act_room(H.go) if H.go else m.act_deal(self.bought)
@@ -6534,6 +6640,87 @@ def furni_props(i, item):
     return [("piano_f%d" % i, (cx - 11, cy - 6, 0, cx + 11, cy + 6, 12))]
 
 
+# the main room: what its fixed pieces can be replaced with (the first of each is what he started with)
+DECOR = {
+    "sofa": ("SOFA", "PLUM", 60, [("PLUM", (176, 84, 100)), ("TEAL", (70, 130, 150)), ("TAN LEATHER", (150, 92, 54)),
+                                  ("CREAM", (214, 190, 150)), ("EMERALD", (40, 130, 90)), ("ROYAL PURPLE", (120, 70, 160))]),
+    "fridge": ("FRIDGE", "TEAL", 50, [("TEAL", (78, 176, 164)), ("RETRO RED", (200, 70, 60)), ("BUTTER", (236, 214, 130)),
+                                      ("STEEL", (170, 178, 190)), ("BLACK", (56, 58, 74)), ("GOLD", (214, 180, 90))]),
+    "wood": ("WOODWORK", "WOOD", 80, [("OAK", (150, 96, 60)), ("WALNUT", (128, 84, 56)), ("PALE ASH", (170, 130, 96)),
+                                      ("WHITE", (220, 214, 204)), ("MAHOGANY", (96, 56, 44))]),
+    "floor": ("FLOOR", "FLOOR", 120, [("WARM BOARDS", (200, 138, 84)), ("DARK OAK", (178, 120, 76)), ("PALE OAK", (214, 186, 150)),
+                                      ("SLATE", (110, 116, 134)), ("MARBLE", (232, 226, 232))]),
+    "walls": ("WALLS", "WALL_L", 60, [("LINEN", (208, 198, 180)), ("SAGE", (170, 196, 170)), ("SKY", (170, 200, 228)),
+                                      ("ROSE", (228, 182, 186)), ("WHITE", (240, 236, 226)), ("CHARCOAL", (96, 98, 116))]),
+    "feature": ("FEATURE WALL", "BRICK", 100, [("RED BRICK", (172, 96, 74)), ("BLUE SLATE", (120, 142, 160)), ("FOREST", (60, 100, 80)),
+                                               ("STONE", (214, 200, 180)), ("WINE", (104, 60, 80))]),
+}
+DECOR_ORDER = list(DECOR)
+# furniture he can stand anywhere in the main room: half width, half depth, height
+FOOT = {"plant": (4, 4, 14), "rug": (13, 7, 0.4), "table": (10, 6, 11), "chair": (8, 6, 15), "shelf": (12, 3, 26),
+        "statue": (3, 3, 14), "cabinet": (5, 4, 22), "piano": (11, 6, 12)}
+ADMIRE = {"plant": ["YOU'RE GROWING NICELY", "A BIT OF GREEN"], "rug": ["REALLY TIES THE ROOM TOGETHER"],
+          "table": ["HANDY, THAT"], "chair": ["A CHAIR FOR GUESTS", "VERY COMFY"], "shelf": ["SO MANY BOOKS", "I'LL READ THEM ALL. ONE DAY."],
+          "statue": ["VERY TASTEFUL", "IS IT LOOKING AT ME?"], "cabinet": ["JUST ONE GAME...", "HIGH SCORE: ME"],
+          "piano": ["PLINK. PLONK. PLINK.", "I SHOULD TAKE LESSONS"]}
+KEEP_CLEAR = [(22, 62), (137, 3), (114, 38), (46, 54), (58, 30)]
+
+
+def paint_furni(s, item, x, y):
+    """One piece of his own furniture, standing on the main room floor."""
+    hw, hd, h = FOOT[item]
+    x0, y0, x1, y1 = x - hw, y - hd, x + hw, y + hd
+    if item == "plant":
+        box(s, x0 + 1, y0 + 1, 0, x1 - 1, y1 - 1, 6, (196, 104, 70), bands=1)
+        px, py = P(x, y, 6)
+        for dx, dy, r in ((0, -4, 5), (-4, -8, 4), (4, -9, 4), (0, -13, 3)):
+            pygame.draw.circle(s, (62, 140, 78) if r > 3 else (124, 200, 112), (px + dx, py + dy), r)
+    elif item == "rug":
+        poly(s, shade(PLUM, 0.8), [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], shade(PLUM, 0.5))
+        poly(s, PLUM, [P(x0 + 2, y0 + 2), P(x1 - 2, y0 + 2), P(x1 - 2, y1 - 2), P(x0 + 2, y1 - 2)])
+        poly(s, (240, 214, 150), [P(x0 + 9, y0 + 5), P(x1 - 9, y0 + 5), P(x1 - 9, y1 - 5), P(x0 + 9, y1 - 5)])
+    elif item == "table":
+        for ax, ay in ((x0 + 1, y1 - 1), (x1 - 1, y1 - 1), (x1 - 1, y0 + 1)):
+            pygame.draw.line(s, shade(WOOD, 0.6), P(ax, ay, 0), P(ax, ay, 9.5), 2)
+        box(s, x0, y0, 9.5, x1, y1, 11, WOOD, bands=1)
+        px, py = P(x, y, 11)
+        s.fill((90, 170, 220), (px - 1, py - 5, 3, 5))
+        s.fill((240, 120, 150), (px - 2, py - 8, 5, 3))
+    elif item == "chair":
+        box(s, x0, y0, 0, x0 + 3, y1, 11, shade(PLUM, 0.9), bands=1)
+        box(s, x0 + 3, y0, 0, x1 - 3, y1 - 3, 7, PLUM, top=shade(PLUM, 1.18), bands=2)
+        box(s, x1 - 3, y0, 0, x1, y1, 11, shade(PLUM, 0.9), bands=1)
+        box(s, x0 + 3, y1 - 3, 0, x1 - 3, y1, 15, shade(PLUM, 0.92))
+    elif item == "shelf":
+        rnd = random.Random(int(x * 7 + y))
+        box(s, x0, y0, 0, x1, y1, h, WOOD)
+        for z in (3, 11, 19):
+            wall_rect(s, shade(WOOD, 0.45), "y", x0 + 1, x1 - 1, z, z + 6.5, None, y1)
+            ax = x0 + 2
+            while ax < x1 - 3:
+                c = rnd.choice(((220, 80, 70), (90, 170, 220), (240, 200, 80), (120, 200, 130), (230, 230, 236), (200, 120, 210)))
+                wall_rect(s, c, "y", ax, ax + 2, z, z + rnd.choice((3.5, 4.5, 5.5)), None, y1)
+                ax += rnd.choice((2.6, 3.2))
+    elif item == "statue":
+        box(s, x0, y0, 0, x1, y1, 7, (130, 124, 144), bands=1)
+        px, py = P(x, y, 7)
+        s.fill((250, 214, 110), (px - 1, py - 7, 3, 7))
+        pygame.draw.circle(s, (250, 214, 110), (px, py - 9), 2)
+        s.fill((255, 244, 190), (px - 1, py - 10, 1, 2))
+    elif item == "cabinet":
+        box(s, x0, y0, 0, x1, y1, h, (60, 70, 150), top=(90, 100, 190))
+        wall_rect(s, (30, 30, 44), "y", x0 + 1, x1 - 1, 11, 18, None, y1)
+        wall_rect(s, (120, 230, 150), "y", x0 + 2, x1 - 2, 12, 17, None, y1)
+        wall_rect(s, (250, 214, 110), "y", x0 + 1, x1 - 1, 19, 21, None, y1)
+    else:
+        box(s, x0, y0, 0, x1, y1, h, (34, 30, 44), top=(54, 50, 66))
+        wall_rect(s, (250, 250, 250), "y", x0 + 2, x1 - 2, h - 4, h - 1, None, y1)
+        ax = x0 + 3
+        while ax < x1 - 3:
+            pygame.draw.line(s, (30, 26, 40), P(ax, y1, h - 3), P(ax, y1, h - 1))
+            ax += 2
+
+
 class House:
     def __init__(self, life):
         self.L = life
@@ -6542,6 +6729,10 @@ class House:
         self.sel, self.act, self.plan = 0, 0, 0
         self.style = 0                   # which finish the main room wears: any he has lived in
         self.shop, self.spot = 0, 0      # where the catalogue is open, and which spot he is furnishing
+        self.decor = {}                  # fixed pieces of the main room he has replaced: which -> option
+        self.dcat, self.dopt = 0, 1      # where the decorator's book is open
+        self.pieces = []                 # his own furniture in the main room: [what, x, y]
+        self.arrange = None              # set when the page closes into arranging the main room
         self.due = False                 # the flat needs repainting in its new finish
         self.go = None                   # a room he has been sent to
 
@@ -6557,6 +6748,43 @@ class House:
     def level(self, kind):
         return next((r[1] for r in self.rooms if r and r[0] == kind), 1)
 
+    def room_max(self):
+        return 2 + 2 * self.tier
+
+    def options(self, key):
+        """What the decorator will fit: a bigger house brings a longer list."""
+        return DECOR[key][3][:3 + self.tier]
+
+    def solids(self):
+        """His own furniture is as solid as the rest."""
+        HOME_SOLIDS[11:] = [(x - FOOT[k][0], y - FOOT[k][1], 0, x + FOOT[k][0], y + FOOT[k][1], FOOT[k][2])
+                            for k, x, y in self.pieces if k != "rug"]
+
+    def fits(self, item, x, y, skip=None):
+        """Can this piece stand here?  Not through the walls or other furniture, and not across where he walks."""
+        hw, hd, h = FOOT[item]
+        if x - hw < 2 or y - hd < 2 or x + hw > 148 or y + hd > 98:
+            return False
+        a = (x - hw - 1, y - hd - 1, x + hw + 1, y + hd + 1)
+        others = [(k, px - FOOT[k][0], py - FOOT[k][1], px + FOOT[k][0], py + FOOT[k][1])
+                  for i, (k, px, py) in enumerate(self.pieces) if i != skip]
+        boxes = [("", b[0], b[1], b[3], b[4]) for b in HOME_SOLIDS[:11] if b[2] < 20] + others
+        for k, bx0, by0, bx1, by1 in boxes:
+            if (item == "rug") != (k == "rug") and k:
+                continue                                    # a rug can lie under other furniture
+            if a[0] < bx1 and a[2] > bx0 and a[1] < by1 and a[3] > by0:
+                return False
+        if item == "rug":
+            return True
+        lanes = [(NODES[p], NODES[q]) for p, q in EDGES] + [(pt, pt) for pt in KEEP_CLEAR]
+        for (ax, ay), (bx, by) in lanes:
+            n = int(max(abs(bx - ax), abs(by - ay)) / 2) + 1
+            for i in range(n + 1):
+                px, py = ax + (bx - ax) * i / n, ay + (by - ay) * i / n
+                if a[0] - 4 < px < a[2] + 4 and a[1] - 4 < py < a[3] + 4:
+                    return False
+        return True
+
     def record(self, kind):
         return next((r for r in self.rooms if r and r[0] == kind), None)
 
@@ -6571,7 +6799,7 @@ class House:
 
     def value(self):
         return (sum(h[1] for h in HOMES[:self.tier + 1]) + sum(ROOMS[r[0]]["cost"] * r[1] for r in self.rooms if r)
-                + sum(FURNI[f][1] for r in self.rooms if r for f in r[2] if f))
+                + sum(FURNI[f][1] for r in self.rooms if r for f in r[2] if f) + sum(FURNI[p[0]][1] for p in self.pieces))
 
     def used(self, kind):
         """He has just spent a while in one of his rooms."""
@@ -6591,6 +6819,9 @@ class House:
         w = self.L.w
         globals().update(_LOOK0)
         globals().update(HOME_LOOK[min(self.style, self.tier)])
+        for key, i in self.decor.items():                  # and whatever he has chosen for himself on top
+            globals()[DECOR[key][1]] = DECOR[key][3][i][1]
+        self.solids()
         w.cache.clear()
         w.room = w.build_room()
         w.mask = pygame.mask.from_surface(w.room)
@@ -6612,6 +6843,22 @@ class House:
                 out.append(("THE FINEST HOUSE IN TOWN", "none", False))
             if self.tier:
                 out.append(("FINISH: " + HOMES[min(self.style, self.tier)][0] + " STYLE", "style", True))
+            key = DECOR_ORDER[self.dcat % len(DECOR_ORDER)]
+            opts = self.options(key)
+            name, _, cost, _ = DECOR[key]
+            i = self.dopt % len(opts)
+            out.append(("REPLACE: THE " + name, "dcat", True))
+            out.append(("WITH: " + opts[i][0], "dopt", True))
+            out.append((("FIT IT $%d" % cost) if self.decor.get(key, 0) != i else "THAT IS WHAT HE HAS", "decor",
+                        self.decor.get(key, 0) != i and m.coins >= cost))
+            item = FURNI_ORDER[self.shop % len(FURNI_ORDER)]
+            home = not L.w.party
+            out.append(("SHOP: %s $%d" % FURNI[item], "shop", True))
+            full = len(self.pieces) >= self.room_max()
+            out.append(("NO SPACE FOR MORE" if full else "BUY IT AND PLACE IT" if home else "HE'S OUT. WAIT TILL HE'S HOME", "place",
+                        home and not full and m.coins >= FURNI[item][1]))
+            if self.pieces:
+                out.append(("ARRANGE THE FURNITURE", "arrange", home))
             return out
         i = self.sel - 1
         if i >= self.slots():
@@ -6643,7 +6890,8 @@ class House:
 
     def describe(self):
         if self.sel == 0:
-            return (HOMES[self.tier][0], "%d OF %d ROOMS BUILT" % (len(self.built()), self.slots()),
+            return (HOMES[self.tier][0], "%d/%d ROOMS BUILT, %d/%d PIECES OF HIS OWN" % (
+                len(self.built()), self.slots(), len(self.pieces), self.room_max()),
                     "A BIGGER HOUSE HOLDS MORE ROOMS" if self.tier < 3 else "NOT BAD FOR A MAN IN A BOX")
         i = self.sel - 1
         if i >= self.slots():
@@ -6686,6 +6934,26 @@ class House:
         elif what == "style":
             self.style = (min(self.style, self.tier) + 1) % (self.tier + 1)
             self.due = True
+        elif what == "dcat":
+            self.dcat, self.dopt = self.dcat + 1, 1
+        elif what == "dopt":
+            self.dopt += 1
+        elif what == "decor":
+            key = DECOR_ORDER[self.dcat % len(DECOR_ORDER)]
+            m.coins -= DECOR[key][2]
+            self.decor[key] = self.dopt % len(self.options(key))
+            self.due = True
+            L.tell("THE %s: %s NOW." % (DECOR[key][0], DECOR[key][3][self.decor[key]][0]))
+            play("coin")
+        elif what == "place":
+            item = FURNI_ORDER[self.shop % len(FURNI_ORDER)]
+            m.coins -= FURNI[item][1]
+            play("coin")
+            self.arrange = item
+            return True
+        elif what == "arrange":
+            self.arrange = True
+            return True
         elif what == "shop":
             self.shop += 1
         elif what == "spot":
@@ -6754,7 +7022,7 @@ class House:
 
     # ---- keeping it ----
     def dump(self):
-        return {"tier": self.tier, "rooms": self.rooms, "style": self.style}
+        return {"tier": self.tier, "rooms": self.rooms, "style": self.style, "decor": self.decor, "pieces": self.pieces}
 
     def load(self, d):
         if not isinstance(d, dict):
@@ -6764,6 +7032,12 @@ class House:
             rooms = [([r[0], clamp(int(r[1]), 1, 3), [(f if f in FURNI else None) for f in (list(r[2]) + [None] * 3)[:3]] if len(r) > 2 else [None] * 3,
                        int(r[3]) % len(PAINTS) if len(r) > 3 else 0] if r and r[0] in ROOMS else None) for r in d.get("rooms", [])]
             self.style = clamp(int(d.get("style", self.tier)), 0, self.tier)
+            self.decor = {k: int(v) for k, v in d.get("decor", {}).items() if k in DECOR and 0 <= int(v) < len(DECOR[k][3])}
+            for k, x, y in d.get("pieces", []):
+                if k in FOOT and self.fits(k, float(x), float(y)):
+                    self.pieces.append([k, float(x), float(y)])
+            self.due = self.due or bool(self.decor)
+            self.solids()
             self.rooms = (rooms + [None] * 8)[:8]
             self.due = self.tier > 0
         except (TypeError, ValueError, KeyError, IndexError):
@@ -7186,6 +7460,19 @@ def main():
             L.page = int(v)
         elif k == "cam":
             world.cam = int(v)
+        elif k == "pieces":
+            for s in v.split("+"):
+                kind, x, y = s.split(":")
+                L.house.pieces.append([kind, float(x), float(y)])
+            L.house.solids()
+        elif k == "decor":
+            for s in v.split("+"):
+                key, _, i = s.partition(":")
+                L.house.decor[key] = int(i)
+            L.house.due = True
+        elif k == "arr":
+            world.arr_start(v or None)
+            world.arr["cur"] = (200.0, 120.0)
         elif k == "tier":
             L.house.tier, L.house.due = int(v), True
         elif k == "rooms":
@@ -7240,7 +7527,9 @@ def main():
                         life.close()
                     pressed, held, clicked, mouse, cur_t = [], set(), False, None, 0.0
                 elif typing is None:
-                    if "E" in chars and not calib:
+                    if world.arr:
+                        pass
+                    elif "E" in chars and not calib:
                         life.open, life.scroll, pressed = True, None, []
                     elif "V" in chars and not calib:
                         world.next_cam()
@@ -7259,6 +7548,13 @@ def main():
                 if mouse:
                     cur[0], cur[1] = mouse
                     cur_t = 4.0
+                if world.arr:                           # arranging: the cursor carries the furniture
+                    world.arr["cur"] = world.to_scene(*cur)
+                    cur_t = 4.0
+                    for k in pressed + (["ok"] if clicked else []):
+                        if world.arr:
+                            world.arr_key(k)
+                    pressed, clicked = [], False
                 if clicked:
                     world.click(*world.to_scene(*cur))
                 for k in pressed:
