@@ -19,6 +19,17 @@ friends and he watch the match and cheer and drift to the bar for drinks; they
 climb the stairs to the den for video games; a bedroom sits on top under a flat
 roof. Tilting and shaking throws all five of them about. Then he walks home.
 
+New in 0.4: a full day (morning, daylight, dusk, night) every twelve minutes, seasons by
+the calendar (`--season winter` to try one), rain and snow, and sound (`--mute` to turn it
+off). He has a dog, earns coins at the office and spends them at the shop and on replacing
+what you break, and drives between places with the dog in the back. At home, coats and
+towels swing, the fridge and front door fall open when the house leans, a bottle, an apple
+and a pile of books roll about and knock into things, spills leave puddles he mops, and hard
+shaking cracks the plaster until he patches it. A hard landing leaves him bandaged and
+limping for a while; keep throwing him and he comes to the glass with a placard. One sharp
+tap on the case is a knock. `--weather LAT,LON` shows the real weather for that place: it
+asks api.open-meteo.com, so only use it if you are happy to send that location.
+
 The lamp is a real light: each side of the furniture is lit by how squarely it
 faces the bulb, things throw shadows away from it, and all of that swings when
 the lamp swings. The man is a jointed figure 25 pixels tall. His arms and legs
@@ -40,6 +51,7 @@ One file, `zerolife.py`. Only dependency: `pygame`.
 | I / M | pitch it toward / away from you (hold) |
 | U | flip it upside down (press again to put it back) |
 | K | shake (hold) |
+| T | type to him, then Enter (try: hello, sorry, food, park, shop, dance) |
 | Esc | quit |
 
 Click a dotted outline to replace the broken thing that lived there. Click the
@@ -47,10 +59,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/zerolife_0.3.0-1_all.deb` over and install it:
+Copy `dist/zerolife_0.4.0-1_all.deb` over and install it:
 
-    scp dist/zerolife_0.3.0-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.3.0-1_all.deb
+    scp dist/zerolife_0.4.0-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.4.0-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Zero Life" appears on the home screen. To run it from a shell instead:
