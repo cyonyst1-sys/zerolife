@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -3404,8 +3404,9 @@ class Party:
         wall_rect(s, (250, 110, 180), "y", 50, 62, F1 + 20, F1 + 23)                               # a neon strip
         np_ = [P(50, 0, F1 + 20), P(62, 0, F1 + 20), P(62, 0, F1 + 23), P(50, 0, F1 + 23)]
         self.glows.append((np_, (56, 6, F1 + 1), P(56, 0, F1 + 21)))
-        for i in range(6):                                                                         # stairs up to the bedroom
-            box(s, 68 - (i + 1) * 3.6, 0, F1, 68 - i * 3.6, 8, F1 + (i + 1) * 6, (96, 96, 126), bands=1)
+        for i in reversed(range(9)):                                                               # stairs up to the bedroom
+            box(s, 68 - (i + 1) * 2.4, 0, F1, 68 - i * 2.4, 8, F1 + (i + 1) * 4, (92, 92, 122), top=(176, 124, 84), bands=1)
+        pygame.draw.line(s, (196, 206, 230), P(68, 8, F1 + 9), P(46.4, 8, F2 + 8))
         s.blit(sh, (0, 0))
         # ---- top floor: slab, walls, bedroom, roof ----
         box(s, 0, 0, F2 - 3, T3X, T3Y, F2, (104, 104, 134), top=(120, 96, 84), bands=1)
@@ -3459,9 +3460,14 @@ class Party:
                 px, py = P(x, 24.5, 15)
                 s.fill((220, 230, 240), (px, py - 3, 2, 3))
         elif name == "stairs":
-            for i in range(6):
-                y1 = 78 - i * 4.34
-                box(s, 0, y1 - 4.34, 0, 10, y1, (i + 1) * 6, (104, 104, 134), bands=1)
+            n = 9                                       # drawn from the top step down, so nearer steps overlap
+            for i in reversed(range(n)):
+                y1 = 78 - i * 26.0 / n
+                box(s, 0, y1 - 26.0 / n, 0, 10, y1, (i + 1) * F1 / n, (92, 92, 122), top=(176, 124, 84), bands=1)
+            pygame.draw.line(s, (196, 206, 230), P(10, 78, 9), P(10, 52, F1 + 8))      # handrail
+            for i in (0, 4, 8):
+                y = 78 - (i + 0.5) * 26.0 / n
+                pygame.draw.line(s, (150, 160, 190), P(10, y, (i + 1) * F1 / n), P(10, y, (i + 1) * F1 / n + 7))
         elif name in ("table", "table2"):
             box(s, *b, (70, 70, 94), top=(130, 130, 154), bands=1)
             px, py = P((b[0] + b[3]) / 2 - 3, (b[1] + b[4]) / 2, b[5])

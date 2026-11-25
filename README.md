@@ -47,10 +47,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/tinyloft_0.2.2-1_all.deb` over and install it:
+Copy `dist/tinyloft_0.2.3-1_all.deb` over and install it:
 
-    scp dist/tinyloft_0.2.2-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/tinyloft_0.2.2-1_all.deb
+    scp dist/tinyloft_0.2.3-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/tinyloft_0.2.3-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Tiny Loft" appears on the home screen. To run it from a shell instead:
