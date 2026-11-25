@@ -21,7 +21,7 @@ import sys
 import time
 
 W, H = 320, 170
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 
 # --------------------------------------------------------------------------
 # choose output mode before pygame is imported
@@ -47,6 +47,7 @@ ap.add_argument("--tiltat", default="0-999999", help=argparse.SUPPRESS)
 ap.add_argument("--shakeat", default="", help=argparse.SUPPRESS)
 ap.add_argument("--act", default="", help=argparse.SUPPRESS)
 ap.add_argument("--seed", type=int, default=None, help=argparse.SUPPRESS)
+ap.add_argument("--life", default="", help=argparse.SUPPRESS)
 ARGS = ap.parse_args()
 
 HEADLESS = bool(ARGS.shot)
@@ -1240,6 +1241,13 @@ class Man:
     def act_visit(self):
         """Round to his friend's place for the evening."""
         self.visit_t = random.uniform(320, 440)
+        if self.w.life.karma <= -50:                    # a bad enough name and the invitations stop
+            self.view = "front"
+            self.say(random.choice(["SAM ISN'T ANSWERING MY CALLS", "NOBODY ASKED ME ROUND...", "GAME NIGHT WENT AHEAD WITHOUT ME"]), 2.8)
+            self.mood = max(0.0, self.mood - 12)
+            yield from self.wait(3.0)
+            self.view = "side"
+            return
         self.say(random.choice(["GOING TO SAM'S", "GAME NIGHT!", "THE MATCH IS ON AT SAM'S"]))
         yield from self.wait(1.4)
         yield from self.leave()
@@ -1305,6 +1313,31 @@ class Man:
         self.mood = min(100, self.mood + 8)
         self.say(random.choice(["THAT'S ENOUGH FOR NOW", "GOOD GAME", "YOU WIN, BOY"]), 1.6)
         yield from self.wait(1.0)
+
+    def act_deal(self, sid):
+        """He has bought something: off to sign for it."""
+        self.cheer = 1.5
+        self.say("I'M BUYING %s!" % the(sid), 2.2)
+        yield from self.wait(2.0)
+        yield from self.leave()
+        yield from self.trip(lambda: Drive(self.w, the(sid)))
+        yield from self.trip(lambda: Drive(self.w, "", True))
+        yield from self.come_back()
+        self.view, self.hop, self.cheer = "front", 0.35, 2.0
+        self.say("WHAT HAPPENED HERE?!" if self.w.broke_away else random.choice(["SIGNED AND SEALED", "IT'S MINE!", "THE KEYS ARE IN MY POCKET"]))
+        yield from self.wait(1.8)
+        self.view = "side"
+
+    def act_muse(self):
+        """A thought about how his life is going."""
+        line = self.w.life.thought()
+        if not line:
+            yield from self.act_wander()
+            return
+        self.view, self.pose = "front", "stand"
+        self.say(line, 2.8)
+        yield from self.wait(3.0)
+        self.view = "side"
 
     def act_knock(self):
         """Someone tapped on the outside of his world."""
@@ -1408,8 +1441,10 @@ class Man:
         elif has("LOVE", "GOOD", "NICE", "THANK"):
             self.mood = min(100, self.mood + 10)
             self.say(random.choice(["AW, THANKS", "YOU TOO", "THAT'S KIND"]))
+        elif has("EMPIRE", "BUSINESS", "BOSS", "TOWN"):
+            self.say("THEY CALL ME %s" % w.life.title())
         elif has("MONEY", "COINS", "RICH"):
-            self.say("I HAVE %d COINS" % self.coins)
+            self.say("I HAVE %d COINS, AND %d A PAYDAY" % (self.coins, w.life.total()))
         elif has("NAME", "WHO"):
             self.say("I'M ZERO. I LIVE HERE.")
         elif has("BAD", "STUPID", "HATE", "UGLY"):
@@ -1549,7 +1584,7 @@ class Man:
             return self.act_work()
         broken = [n for n, it in w.items.items() if it.state == "broken"] + ([] if w.lamp_ok else ["lamp"])
         opts = [(self.act_dog, 2.2 if (w.dog.visible and not w.dog.body) else 0.0), (self.act_wander, 3.0), (self.act_tap, 2.0), (self.act_fish, 1.2), (self.act_tv, 1.2),
-                (self.act_window, 0.8), (self.act_play, 1.0)]
+                (self.act_window, 0.8), (self.act_play, 1.0), (self.act_muse, 0.9)]
         if self.need["food"] < 70:
             opts.append((self.act_eat, 1.0))
         r = random.uniform(0, sum(wt for _, wt in opts) + (2.5 if broken else 0))
@@ -1924,6 +1959,7 @@ class World:
         self.fly_o, self.fly_v = [0.0, 0.0], [0.0, 0.0]
         self.party = None                    # the scene he is in while he is out: a drive, the party, a place
         self.dog = Dog()
+        self.life = Life(self)
         self.calm = 0.0                      # seconds the house has been level and still
         self.puddles = []                    # [x, y, size] on the floor, until he mops them
         self.cracks = []                     # (wall, screen points) from too much shaking, until patched
@@ -1950,7 +1986,8 @@ class World:
         m = self.man
         return {"need": m.need, "food": m.food, "mood": m.mood,
                 "broken": [n for n, it in self.items.items() if it.state == "broken"],
-                "lamp_ok": self.lamp_ok, "tank": self.tank_level, "t": self.t, "coins": m.coins, "cracks": len(self.cracks)}
+                "lamp_ok": self.lamp_ok, "tank": self.tank_level, "t": self.t, "coins": m.coins, "cracks": len(self.cracks),
+                "life": self.life.dump()}
 
     def load(self, d):
         try:
@@ -1963,6 +2000,7 @@ class World:
             self.tank_level = float(d.get("tank", 0.7))
             self.t = float(d.get("t", 0))
             m.coins = int(d.get("coins", 40))
+            self.life.load(d.get("life"))
             for _ in range(min(6, int(d.get("cracks", 0)))):
                 self.add_crack()
             for n in d.get("broken", []):
@@ -2067,6 +2105,7 @@ class World:
     # ---- simulation ----
     def update(self, dt, g, jerk):
         self.t += dt
+        self.life.update(dt)
         self.rate = math.sqrt(sum((g[i] - self.g[i]) ** 2 for i in range(3))) / max(dt, 1e-3)
         self.g, self.jerk = g, jerk
         jm = math.sqrt(jerk[0] ** 2 + jerk[1] ** 2 + jerk[2] ** 2)
@@ -3557,6 +3596,14 @@ class World:
             surf.fill(c if v > 30 else (240, 80, 70), (9, y + 1, int(26 * v / 100), 3))
         if m.away:
             text(surf, "OUT", 22, 28, (150, 150, 180))
+        L = self.life
+        if L.mail is not None:                          # a choice is waiting for you
+            pygame.draw.rect(surf, (20, 20, 44), (2, 39, 36, 9), border_radius=2)
+            text(surf, "POST: E", 5, 41, (250, 214, 110) if int(self.t * 2) % 2 else (150, 130, 80))
+        if L.toast_t > 0:
+            s = L.toast[:76]
+            pygame.draw.rect(surf, (20, 20, 44), (W // 2 - len(s) * 2 - 4, 20, len(s) * 4 + 7, 11), border_radius=2)
+            text(surf, s, W // 2 - len(s) * 2, 23, (250, 214, 110))
 
 
 # --------------------------------------------------------------------------
@@ -3650,6 +3697,7 @@ class Party:
         self.lit_key = None
         self.send(m, 104, LANE)
         m.say("HEY EVERYONE!")
+        w.life.greet(self.people[1:], "party")
 
     def close(self):
         global SOLIDS
@@ -4412,6 +4460,7 @@ class Place:
         self.mask = pygame.mask.from_surface(self.room)
         self.lm = pygame.Surface((W, H))
         self.lit_key = None
+        w.life.greet(self.people[1:], kind)
 
     def extra(self, i, x, y, view):
         g = Man(self.w)
@@ -4466,8 +4515,8 @@ class Place:
                 yield from self.wait(m, 1.6, "stand", "back")
             yield from self.walk(m, 33, 70)
             yield from self.wait(m, 0.6, "stand", "back")
-            cost = 8
-            self.keeper.say("THAT'S %d COINS" % cost, 1.8)
+            cost = w.life.shop_price()                  # his name sets the price; his own shop is free
+            self.keeper.say({0: "IT'S YOUR SHOP, BOSS", 5: "FOR YOU, JUST 5", 14: "14 COINS. FOR YOU."}.get(cost, "THAT'S %d COINS" % cost), 1.8)
             yield from self.wait(m, 2.0, "stand", "back")
             if m.coins >= cost:
                 m.coins -= cost
@@ -4491,9 +4540,10 @@ class Place:
                     yield from self.walk(m, 59, 36)
                 else:
                     m.say(random.choice(["EMAILS...", "SPREADSHEETS", "IS IT FRIDAY YET?", "REPLY ALL. OOPS."]), 1.8)
-            m.coins += 35
+            wage = 60 if "firm" in w.life.own else 35
+            m.coins += wage
             play("coin")
-            m.say("PAYDAY! +35", 1.8)
+            m.say("PAYDAY! +%d" % wage, 1.8)
             yield from self.wait(m, 1.6, "sit", "back", 6.0)
         else:
             d, ball = self.dog, self.ball
@@ -4788,6 +4838,760 @@ class Place:
         surf.blit(self.lm, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
         if self.dog and self.dog.speech_t > 0:
             draw_bubble(surf, self.dog.speech, *P(self.dog.x, self.dog.y, self.dog.z + 12))
+
+
+# --------------------------------------------------------------------------
+# his life beyond the flat.  Money can be put to work: businesses and houses
+# along the high street, bought, upgraded and run kindly or harshly.  Every so
+# often a choice lands on the mat.  What he does moves his reputation, and his
+# reputation decides who will deal with him, what things cost, what he earns,
+# whether friends still ask him round, and what turns up at his door.
+# --------------------------------------------------------------------------
+PAY_EVERY = 150.0
+#          id        name              kind    price pay  need own  w   h  colour           accent           roof      note
+_A = [("stall", "LEMONADE STAND", "biz", 60, 4, 0, 0, 22, 12, (236, 206, 110), (240, 120, 90), "stand", "EVERY EMPIRE STARTS SOMEWHERE"),
+      ("flat", "STUDIO FLAT", "home", 150, 9, 0, 0, 24, 30, (176, 132, 120), (120, 160, 220), "flat", "ONE ROOM, ONE TENANT"),
+      ("shop", "CORNER SHOP", "biz", 240, 15, 0, 0, 34, 22, (214, 222, 200), (220, 80, 70), "awning", "YOUR OWN GROCERIES BECOME FREE"),
+      ("pawn", "PAWN SHOP", "biz", 300, 30, -20, -1, 30, 22, (120, 110, 130), (240, 200, 80), "neon", "OTHER PEOPLE'S BAD LUCK"),
+      ("shelter", "DOG SHELTER", "biz", 320, 6, 20, 1, 34, 20, (150, 190, 160), (250, 120, 150), "gable", "DOES GOOD. EARNS LITTLE."),
+      ("terrace", "TERRACE HOUSE", "home", 420, 25, 0, 0, 28, 28, (190, 120, 96), (250, 250, 240), "gable", "A FAMILY HOME TO LET"),
+      ("cafe", "CAFE", "biz", 560, 34, 0, 0, 34, 24, (226, 196, 160), (90, 170, 120), "awning", "COFFEE AND GOSSIP"),
+      ("sams", "SAM'S BUILDING", "home", 800, 46, 0, 0, 30, 44, (116, 116, 148), (255, 172, 84), "flat", "YOU BECOME SAM'S LANDLORD"),
+      ("arcade", "ARCADE", "biz", 950, 58, 0, 0, 36, 26, (90, 80, 150), (120, 230, 240), "neon", "COINS IN, NOISE OUT"),
+      ("clinic", "FREE CLINIC", "biz", 1200, 20, 40, 2, 34, 28, (236, 240, 244), (220, 70, 70), "flat", "NOBODY IS TURNED AWAY"),
+      ("casino", "CASINO", "biz", 1500, 160, -45, -3, 38, 34, (130, 40, 60), (250, 214, 110), "neon", "EARNS A FORTUNE. COSTS YOUR NAME."),
+      ("firm", "THE OFFICE", "biz", 1700, 105, 0, 0, 34, 46, (170, 184, 204), (130, 150, 240), "flat", "YOU BECOME THE BOSS AT WORK"),
+      ("villa", "LAKE VILLA", "home", 2200, 125, 0, 0, 40, 24, (240, 232, 214), (110, 200, 220), "gable", "A VIEW PEOPLE PAY FOR"),
+      ("tower", "ZERO TOWER", "biz", 4500, 290, 0, 0, 30, 70, (120, 150, 190), (255, 240, 170), "tower", "YOUR NAME ON THE SKYLINE"),
+      ("pent", "PENTHOUSE", "home", 5200, 310, 0, 0, 28, 60, (200, 190, 210), (250, 214, 110), "tower", "THE TOP OF THE TOWN")]
+ASSET = {a[0]: dict(name=a[1], kind=a[2], price=a[3], pay=a[4], need=a[5], own=a[6], w=a[7], h=a[8], col=a[9],
+                    acc=a[10], roof=a[11], note=a[12]) for a in _A}
+ASSET["bank"] = dict(name="THE BANK", kind="civic", w=34, h=32, col=(196, 190, 170), acc=(230, 200, 110), roof="columns")
+ASSET["hall"] = dict(name="TOWN HALL", kind="civic", w=36, h=34, col=(176, 156, 150), acc=(120, 160, 220), roof="dome")
+STREET = ["bank", "hall"] + [a[0] for a in _A]
+SLOT = 46
+POLICY = {"biz": ("GENEROUS BOSS", "FAIR BOSS", "CUT CORNERS"), "home": ("LOW RENT", "FAIR RENT", "SQUEEZE THEM")}
+P_HINT = ("LESS MONEY, MORE GOODWILL", "STEADY AND HONEST", "MORE MONEY, BAD FEELING")
+P_MULT = (0.6, 1.0, 1.6)
+P_KARMA = (0.8, 0.0, -1.2)
+P_FLAG = ((120, 220, 140), (250, 250, 240), (230, 80, 80))
+LVL_MULT = (1.0, 1.5, 2.2)
+RANKS = [(15000, "MOGUL"), (6000, "TYCOON"), (2000, "BOSS"), (600, "OWNER"), (150, "HUSTLER"), (0, "NOBODY")]
+
+# What a choice does later, if it does anything: wait, chance, coins, reputation, the news.
+LATER = {"sam": (240, 1.0, 45, 2, "SAM PAID YOU BACK, WITH A BIT EXTRA."),
+         "stock": (180, 0.5, -70, -5, "CUSTOMERS FELL ILL. YOU WERE FINED."),
+         "tax": (300, 0.4, -150, -4, "THE TAX OFFICE FOUND THE HOLE IN YOUR BOOKS."),
+         "lorry": (200, 0.35, -90, -4, "THE POLICE TRACED THOSE TVS TO YOU."),
+         "river": (240, 0.5, -120, -8, "THE RIVER STORY MADE THE FRONT PAGE."),
+         "second": (300, 0.8, 40, 2, "THE ONE YOU FORGAVE IS NOW YOUR BEST WORKER."),
+         "rival": (300, 0.8, 70, 2, "THE SHOP YOU HELPED SENDS CUSTOMERS YOUR WAY."),
+         "raise": (240, 0.8, 35, 1, "HAPPY STAFF, BUSY TILLS."),
+         "boys": (200, 0.4, -60, -6, "THE MAN YOU LEANED ON WENT TO THE PAPERS."),
+         "favour": (200, 0.8, 160, -2, "YOUR FRIEND AT THE TOWN HALL CAME THROUGH.")}
+
+# The choices: what happened, who it can happen to, the decent thing, the other thing.
+# Each answer: label, coins, reputation, what came of it, what it may lead to.
+CHOICES = [
+    ("YOU FIND A FAT WALLET ON A PARK BENCH. THERE IS AN ADDRESS INSIDE.", None,
+     ("HAND IT BACK", 0, 6, "THE OWNER NEARLY CRIED. WORD GETS ROUND.", None),
+     ("KEEP THE CASH", 30, -6, "THIRTY COINS RICHER. NOBODY SAW. PROBABLY.", None)),
+    ("SAM IS SHORT THIS MONTH AND ASKS TO BORROW 30 COINS.", None,
+     ("LEND IT", -30, 5, "SAM WON'T FORGET THIS.", "sam"),
+     ("SAY NO", 0, -3, "SAM NODS AND LOOKS AT HIS SHOES.", None)),
+    ("A COLLECTOR FOR THE DOG SHELTER RATTLES A TIN AT YOUR DOOR.", None,
+     ("GIVE 20", -20, 5, "THE DOG APPROVES.", None),
+     ("PRETEND TO BE OUT", 0, -2, "YOU HOLD YOUR BREATH BEHIND THE DOOR.", None)),
+    ("A MAN IN THE CAR PARK HAS TVS THAT FELL OFF A LORRY. YOU COULD SELL THEM ON.", None,
+     ("WALK AWAY", 0, 3, "NOT YOUR SORT OF BUSINESS.", None),
+     ("BUY AND SELL", 60, -8, "EASY MONEY. FOR NOW.", "lorry")),
+    ("THE KID NEXT DOOR PUT A BALL THROUGH YOUR WINDOW AND IS SHAKING IN HIS BOOTS.", None,
+     ("LAUGH IT OFF", 0, 4, "YOU THROW THE BALL BACK. HE GRINS.", None),
+     ("BILL HIS PARENTS", 15, -4, "THEY PAY. THEY DON'T SAY HELLO ANY MORE.", None)),
+    ("TAX TIME. NOBODY WOULD NOTICE IF A FEW NUMBERS WERE... ROUNDED.", None,
+     ("DECLARE IT ALL", -20, 3, "CLEAN BOOKS, CLEAR HEAD.", None),
+     ("FIDDLE THE BOOKS", 25, -6, "THE NUMBERS LOOK MUCH BETTER NOW.", "tax")),
+    ("A FRIEND IS MOVING FLAT ON SATURDAY AND NEEDS A HAND WITH THE SOFA.", None,
+     ("CARRY THE SOFA", 0, 5, "YOUR BACK HURTS. WORTH IT.", None),
+     ("TOO BUSY", 0, -3, "THEY FOUND SOMEONE ELSE. EVENTUALLY.", None)),
+    ("AN OLD NEIGHBOUR CAN'T MANAGE HER SHOPPING UP THE STAIRS.", None,
+     ("CARRY IT UP", 0, 4, "SHE GIVES YOU A BOILED SWEET.", None),
+     ("NOT MY PROBLEM", 0, -3, "YOU HEAR A TIN ROLL DOWN THE STAIRS.", None)),
+    ("THE CASHIER HANDS YOU CHANGE FOR A MUCH BIGGER NOTE.", None,
+     ("GIVE IT BACK", 0, 3, "SHE WOULD HAVE HAD TO PAY THAT HERSELF.", None),
+     ("POCKET IT", 10, -3, "TEN COINS. YOU WALK A LITTLE FASTER.", None)),
+    ("A TENANT HAS LOST THEIR JOB AND CAN'T MAKE THE RENT THIS MONTH.", "home",
+     ("GIVE THEM TIME", -15, 7, "THEY THANK YOU THREE TIMES.", None),
+     ("EVICT THEM", 20, -10, "THE PLACE IS EMPTY BY FRIDAY.", None)),
+    ("A TENANT'S BOILER HAS BROKEN, IN THE COLDEST WEEK OF THE YEAR.", "home",
+     ("FIX IT TODAY", -30, 5, "WARM RADIATORS BY TEATIME.", None),
+     ("LET THEM WAIT", 0, -6, "THEY WEAR COATS INDOORS ALL WEEK.", None)),
+    ("YOUR STAFF ASK, VERY POLITELY, FOR A RAISE.", "biz",
+     ("GIVE THE RAISE", -25, 6, "THE WHOLE PLACE IS SMILING.", "raise"),
+     ("REFUSE", 0, -5, "THE SMILES STOP.", None)),
+    ("A WORKER TOOK MONEY FROM THE TILL TO FEED THEIR FAMILY, AND OWNS UP.", "biz",
+     ("A SECOND CHANCE", 0, 6, "THEY PROMISE TO PAY BACK EVERY COIN.", "second"),
+     ("SACK THEM", 5, -5, "THEY LEAVE WITHOUT A WORD.", None)),
+    ("AN INSPECTOR FINDS A FAULT, AND HINTS THAT IT COULD BE FORGOTTEN.", "biz",
+     ("FIX IT PROPERLY", -35, 3, "ALL ABOVE BOARD.", None),
+     ("SLIP HIM 10", -10, -7, "HE WINKS. YOU FEEL GRUBBY.", None)),
+    ("A SUPPLIER OFFERS OUT-OF-DATE STOCK AT A QUARTER OF THE PRICE.", "food",
+     ("SEND IT BACK", 0, 4, "FRESH OR NOTHING.", None),
+     ("SELL IT ANYWAY", 40, -8, "NOBODY READS THE DATES.", "stock")),
+    ("THE FAMILY SHOP ACROSS THE ROAD IS ABOUT TO GO UNDER.", "biz",
+     ("HELP THEM OUT", -40, 9, "THEY CAN'T BELIEVE IT.", "rival"),
+     ("UNDERCUT THEM", 50, -9, "THEIR SHUTTERS COME DOWN FOR GOOD.", None)),
+    ("THE BINS BEHIND YOUR BUSINESS ARE FULL OF SOMETHING NASTY.", "biz",
+     ("PAY FOR DISPOSAL", -35, 4, "DONE PROPERLY. IT COSTS WHAT IT COSTS.", None),
+     ("TIP IT IN THE RIVER", 0, -12, "IT'S DARK. NOBODY SEES.", "river")),
+    ("A DEVELOPER WANTS YOUR BACKING TO TURN THE PARK INTO A CAR PARK.", "rich",
+     ("PROTECT THE PARK", -50, 12, "THE DOG WILL NEVER KNOW WHAT YOU DID FOR HIM.", None),
+     ("TAKE THE DEAL", 150, -15, "THE DIGGERS ARRIVE ON MONDAY.", None)),
+    ("A COUNCILLOR SUGGESTS THAT A GIFT WOULD SMOOTH YOUR NEXT PLANS.", "rich",
+     ("REFUSE", 0, 4, "YOU'LL WAIT IN LINE LIKE EVERYONE ELSE.", None),
+     ("BUY THE FAVOUR", -60, -8, "DOORS START TO OPEN.", "favour")),
+    ("A SMALL TRADER OWES YOU MONEY AND IS LATE AGAIN.", "bad",
+     ("FORGIVE THE DEBT", 0, 10, "HE SHAKES YOUR HAND FOR A LONG TIME.", None),
+     ("SEND THE BOYS", 80, -12, "HE PAYS. EVERYBODY HEARS ABOUT IT.", "boys")),
+    ("THE TOWN WANTS TO THANK YOU. A BENCH WITH YOUR NAME, PERHAPS?", "good",
+     ("A BENCH IS PLENTY", 0, 3, "PEOPLE SIT ON IT AND THINK WELL OF YOU.", None),
+     ("MAKE IT A STATUE", -40, -5, "IT'S VERY SHINY. PEOPLE ROLL THEIR EYES.", None)),
+    ("SAM'S LEASE IS UP. YOU OWN THE BUILDING NOW.", "sams",
+     ("FREEZE THE RENT", -20, 8, "SAM OPENS THE GOOD CRISPS.", None),
+     ("RAISE IT", 40, -10, "GAME NIGHT GOES VERY QUIET.", None)),
+]
+
+
+def the(sid):
+    n = ASSET[sid]["name"]
+    return n if n.split()[0] in ("THE", "SAM'S", "ZERO") else "THE " + n
+
+
+def paint_building(s, cx, base, sid, owned, locked, pol, lvl):
+    a = ASSET[sid]
+    w, h, roof = a["w"], a["h"], a["roof"]
+    x0, top = cx - w // 2, base - h
+    live = owned or a["kind"] == "civic"
+    col = a["col"] if live else (54, 58, 92)
+    acc = a["acc"] if live else (74, 78, 112)
+    rnd = random.Random(sum(ord(c) for c in sid))
+    if roof == "stand":                                 # a table under a parasol
+        s.fill(shade(col, 0.6), (cx - 1, base - 20, 2, 20))
+        pygame.draw.polygon(s, acc, [(cx - 12, base - 18), (cx, base - 26), (cx + 12, base - 18)])
+        pygame.draw.polygon(s, OUTLINE, [(cx - 12, base - 18), (cx, base - 26), (cx + 12, base - 18)], 1)
+        s.fill(col, (x0, base - 10, w, 4))
+        s.fill(shade(col, 0.7), (x0 + 2, base - 6, 2, 6))
+        s.fill(shade(col, 0.7), (x0 + w - 4, base - 6, 2, 6))
+        if live:
+            for i in range(3):
+                s.fill((250, 240, 150), (x0 + 4 + i * 6, base - 13, 2, 3))
+        top = base - 26
+    else:
+        if roof == "tower":                             # a stepped top
+            s.fill(shade(col, 0.85), (x0 + 5, top - 6, w - 10, 6))
+            s.fill(acc, (cx, top - 14, 1, 8))
+        pygame.draw.rect(s, col, (x0, top, w, h))
+        s.fill(shade(col, 0.72), (x0 + w - 5, top, 5, h))
+        y = top + 5
+        while y < base - 16:                            # rows of windows
+            x = x0 + 4
+            while x < x0 + w - 7:
+                lit = live and rnd.random() < 0.75
+                s.fill((255, 222, 130) if lit else shade(col, 0.5), (x, y, 4, 5))
+                x += 8
+            y += 9
+        s.fill(shade(col, 0.4), (cx - 3, base - 9, 6, 9))
+        pygame.draw.rect(s, OUTLINE, (x0, top, w, h), 1)
+        if roof == "gable":
+            pts = [(x0 - 2, top), (cx, top - 10), (x0 + w + 1, top)]
+            pygame.draw.polygon(s, shade(acc, 0.8) if sid != "terrace" else (150, 70, 60), pts)
+            pygame.draw.polygon(s, OUTLINE, pts, 1)
+            top -= 10
+        elif roof == "columns":
+            pts = [(x0 - 2, top), (cx, top - 9), (x0 + w + 1, top)]
+            pygame.draw.polygon(s, shade(col, 1.1), pts)
+            pygame.draw.polygon(s, OUTLINE, pts, 1)
+            for x in range(x0 + 3, x0 + w - 3, 7):
+                s.fill((236, 232, 216), (x, top + 3, 3, h - 4))
+            s.fill(acc, (cx - 2, top - 5, 4, 3))
+            top -= 9
+        elif roof == "dome":
+            pygame.draw.circle(s, acc, (cx, top), 9, draw_top_left=True, draw_top_right=True)
+            pygame.draw.circle(s, OUTLINE, (cx, top), 9, 1, draw_top_left=True, draw_top_right=True)
+            s.fill(OUTLINE, (cx, top - 15, 1, 6))
+            s.fill((230, 200, 110), (cx - 1, top - 16, 3, 2))
+            s.fill((250, 250, 240), (cx - 3, base - 20, 7, 7))
+            top -= 16
+        else:
+            s.fill(shade(col, 1.12), (x0 - 1, top - 2, w + 2, 3))
+            pygame.draw.rect(s, OUTLINE, (x0 - 1, top - 2, w + 2, 3), 1)
+            top -= 2
+        if roof == "awning":
+            for i in range(w // 4):
+                s.fill(acc if i % 2 else (250, 250, 240), (x0 + i * 4, base - 15, 4, 4))
+        elif roof == "neon":
+            s.fill(shade(acc, 0.35), (x0 + 3, base - 17, w - 6, 6))
+            for x in range(x0 + 5, x0 + w - 5, 3):
+                s.fill(acc, (x, base - 15, 2, 2))
+        elif roof == "tower":
+            top -= 14
+    if owned:                                           # his flag: the colour says how he runs the place
+        s.fill(OUTLINE, (x0 + 2, top - 9, 1, 9))
+        s.fill(P_FLAG[pol], (x0 + 3, top - 9, 7, 5))
+        s.fill(INK, (x0 + 5, top - 8, 3, 1))
+        s.fill(INK, (x0 + 6, top - 7, 1, 1))
+        s.fill(INK, (x0 + 5, top - 6, 3, 1))
+        for i in range(lvl):
+            s.fill((250, 214, 110), (cx - lvl * 2 + i * 4, base + 2, 3, 3))
+    elif locked:                                        # a padlock
+        pygame.draw.rect(s, (160, 160, 180), (cx - 3, base - h // 2 - 6, 6, 6), 1)
+        s.fill((200, 200, 216), (cx - 4, base - h // 2 - 2, 8, 6))
+        s.fill(INK, (cx, base - h // 2, 1, 2))
+    return top
+
+
+class Life:
+    def __init__(self, world):
+        self.w = world
+        self.karma = 0.0
+        self.own = {}                # id -> [how it is run 0-2, level 1-3, coins sunk into it, closed for a payday]
+        self.debt, self.shark = 0, False
+        self.crown = None            # "mayor" or "kingpin", once he has the town
+        self.pay_t = PAY_EVERY
+        self.mail, self.mail_t, self.mail_age, self.flip = None, 60.0, 0.0, False
+        self.seen = []
+        self.later = []              # [seconds left, what]
+        self.news = []
+        self.toast, self.toast_t = "", 0.0
+        self.open = False
+        self.sel, self.act, self.pick = 2, 0, 0
+        self.card = None             # how the last choice turned out, until he has read it
+        self.sure = None
+        self.bought = None
+        self.street, self.street_key = None, None
+        self.tops = {}
+        self.scroll = None
+        self.t = 0.0
+
+    # ---- where he stands ----
+    def worth(self):
+        return self.w.man.coins + sum(o[2] for o in self.own.values()) - self.debt
+
+    def rank(self):
+        n = self.worth()
+        return next((name for least, name in RANKS if n >= least), "DEBTOR")
+
+    def title(self):
+        if self.crown:
+            return "MAYOR ZERO" if self.crown == "mayor" else "KINGPIN ZERO"
+        k = self.karma
+        word = "BELOVED " if k >= 60 else "KIND " if k >= 25 else "" if k > -25 else "SHADY " if k > -60 else "FEARED "
+        return word + self.rank()
+
+    def locked(self, sid):
+        need = ASSET[sid]["need"]
+        return (need > 0 and self.karma < need) or (need < 0 and self.karma > need)
+
+    def income(self, sid):
+        a, o = ASSET[sid], self.own[sid]
+        trust = 1 + self.karma / 400.0 * (-1 if a["own"] < 0 else 1)      # people back a good name, and avoid a bad one
+        boss = 1.1 if self.crown == "mayor" else 1.25 if self.crown == "kingpin" else 1.0
+        return max(1, int(round(a["pay"] * P_MULT[o[0]] * LVL_MULT[o[1] - 1] * trust * boss)))
+
+    def total(self):
+        return sum(self.income(s) for s, o in self.own.items() if not o[3])
+
+    def up_cost(self, sid):
+        return int(ASSET[sid]["price"] * 0.6 * self.own[sid][1])
+
+    def limit(self):
+        return int(100 + max(0, self.worth() + self.debt) * (0.4 if self.karma >= -15 else 0.2)) // 100 * 100
+
+    def gift(self):
+        return max(25, self.w.man.coins // 20)
+
+    def shop_price(self):
+        if "shop" in self.own:
+            return 0
+        return 5 if self.karma >= 30 else 14 if self.karma <= -30 else 8
+
+    def has(self, cond):
+        if cond is None:
+            return True
+        if cond in ("biz", "home"):
+            return any(ASSET[s]["kind"] == cond for s in self.own)
+        if cond == "food":
+            return any(s in self.own for s in ("stall", "shop", "cafe"))
+        if cond == "bad":
+            return self.karma <= -25
+        if cond == "good":
+            return self.karma >= 35
+        if cond == "rich":
+            return self.worth() >= 800
+        return cond in self.own
+
+    # ---- things happening ----
+    def tell(self, s):
+        self.news.insert(0, s)
+        del self.news[6:]
+        self.toast, self.toast_t = s, 5.0
+
+    def add_karma(self, v):
+        self.karma = clamp(self.karma + v, -100, 100)
+
+    def pay(self, n):
+        """Coins in or out.  What he cannot cover goes on the slate."""
+        m = self.w.man
+        m.coins += int(n)
+        if m.coins < 0:
+            self.debt -= m.coins
+            m.coins = 0
+
+    def update(self, dt):
+        self.t += dt
+        self.toast_t -= dt
+        self.pay_t -= dt
+        if self.pay_t <= 0:
+            self.pay_t += PAY_EVERY
+            self.payday()
+        for e in self.later[:]:
+            e[0] -= dt
+            if e[0] <= 0:
+                self.later.remove(e)
+                _, chance, coins, karma, news = LATER[e[1]]
+                if random.random() < chance:
+                    self.pay(coins)
+                    self.add_karma(karma)
+                    self.tell(news)
+                    play("coin" if coins > 0 else "knock", 0.3)
+        if self.mail is None:
+            self.mail_t -= dt
+            if self.mail_t <= 0:
+                self.post()
+        else:
+            self.mail_age += dt
+            if self.mail_age > 240 and not self.open:   # left unanswered, he follows his own nature
+                c = CHOICES[self.mail]
+                good = random.random() < clamp(0.5 + self.karma / 200.0, 0.15, 0.85)
+                opt = c[2] if good else c[3]
+                if self.w.man.coins + opt[1] < 0:
+                    opt = c[3] if good else c[2]
+                self.decide(opt, True)
+
+    def payday(self):
+        m = self.w.man
+        got = 0
+        for sid, o in self.own.items():
+            a = ASSET[sid]
+            self.add_karma(P_KARMA[o[0]] + a["own"] * 0.5)
+            if o[3]:
+                o[3] = 0
+                continue
+            n = self.income(sid)
+            if o[0] == 2 and random.random() < 0.12:
+                o[3] = 1
+                self.tell(("THE STAFF AT %s WALKED OUT." if a["kind"] == "biz" else "THE TENANTS AT %s MOVED OUT.") % the(sid))
+            elif o[0] == 0 and random.random() < 0.10:
+                n *= 2
+                self.tell("PEOPLE LOVE %s. A BUMPER WEEK." % the(sid))
+            got += n
+        if self.debt:
+            self.debt += int(math.ceil(self.debt * (0.10 if self.shark else 0.03)))
+            back = min(self.debt, int(got * 0.3))
+            self.debt -= back
+            got -= back
+            if not self.debt:
+                self.tell("THE DEBT IS PAID OFF.")
+        if got:
+            m.coins += got
+            play("coin", 0.3)
+            if self.toast_t <= 0:
+                self.toast, self.toast_t = "PAYDAY: +$%d" % got, 4.0
+        if self.crown == "mayor" and self.karma < 20:      # the town can take the chain back
+            self.crown = None
+            self.tell("VOTED OUT. THE TOWN LOST ITS FAITH IN YOU.")
+        elif self.crown == "kingpin" and self.karma > -20:
+            self.crown = None
+            self.tell("YOU WENT SOFT. THE TOWN IS ITS OWN AGAIN.")
+        self.fate()
+
+    def fate(self):
+        """What a name brings to his door."""
+        w, m = self.w, self.w.man
+        home = not (m.away or w.party or m.sleeping or m.body or m.hidden)
+        r = random.random()
+        if self.karma >= 35 and r < 0.3 and home:
+            m.food = 4
+            m.mood = min(100, m.mood + 10)
+            play("knock", 0.3)
+            m.say(random.choice(["A NEIGHBOUR LEFT A PIE!", "FLOWERS? FOR ME?", "A THANK-YOU CARD. AW."]), 3.0)
+            self.tell("SOMEBODY LEFT A GIFT AT THE DOOR.")
+        elif self.karma <= -35 and r < 0.3 and home:
+            whole = [it for it in w.items.values() if it.state != "broken" and not it.held]
+            if whole and random.random() < 0.6:
+                w.smash(random.choice(whole))
+            else:
+                w.add_crack()
+                play("crash", 0.1)
+            m.say(random.choice(["A BRICK?! WHO THROWS A BRICK?", "THEY KNOW WHERE I LIVE...", "I SUPPOSE I EARNED THAT"]), 3.0)
+            self.tell("SOMEBODY PUT A BRICK THROUGH THE WINDOW.")
+        elif self.karma <= -60 and r > 0.8 and m.coins > 40:
+            fine = m.coins // 8
+            m.coins -= fine
+            self.tell("FINED $%d. THE POLICE ARE WATCHING YOU." % fine)
+
+    def post(self):
+        pool = [i for i, c in enumerate(CHOICES) if self.has(c[1]) and i not in self.seen]
+        if not pool:
+            self.seen = self.seen[-3:]
+            pool = [i for i, c in enumerate(CHOICES) if self.has(c[1]) and i not in self.seen]
+        self.mail, self.mail_age, self.flip, self.pick = random.choice(pool), 0.0, random.random() < 0.5, 0
+        play("knock", 0.3)
+
+    def options(self):
+        c = CHOICES[self.mail]
+        return (c[3], c[2]) if self.flip else (c[2], c[3])
+
+    def decide(self, opt, alone=False):
+        label, coins, karma, result, tag = opt
+        self.pay(coins)
+        self.add_karma(karma)
+        if tag:
+            self.later.append([LATER[tag][0], tag])
+        self.seen.append(self.mail)
+        self.mail, self.mail_t = None, random.uniform(110, 190)
+        if alone:
+            self.tell("LEFT TO HIMSELF, HE CHOSE: " + label + ".")
+        else:
+            self.card = (result, coins, karma)
+            self.news.insert(0, result)
+            del self.news[6:]
+        m = self.w.man
+        m.mood = clamp(m.mood + karma, 0, 100)
+        play("coin" if coins > 0 else "talk0", 0.2)
+
+    def greet(self, people, where):
+        """How a room takes him when he walks in."""
+        if not people:
+            return
+        k, o = self.karma, self.own.get("sams")
+        if where == "store" and "shop" in self.own:
+            line = ["HELLO, BOSS!", "TAKINGS ARE UP, BOSS"]
+        elif where == "office" and "firm" in self.own:
+            line = ["MORNING, BOSS", "LOOK BUSY, IT'S THE BOSS"] if self.own["firm"][0] else ["BEST BOSS IN TOWN!", "MORNING, BOSS!"]
+        elif where == "party" and o and o[0] == 2:
+            line = ["THE RENT WENT UP AGAIN...", "OH. THE LANDLORD."]
+        elif where == "party" and o and o[0] == 0:
+            line = ["TO THE BEST LANDLORD!", "ZERO! COME IN, COME IN!"]
+        elif self.crown == "mayor":
+            line = ["IT'S THE MAYOR!", "GOOD DAY, MR MAYOR"]
+        elif self.crown == "kingpin":
+            line = ["DON'T LOOK AT HIM", "S-SIR.", "WE DON'T WANT TROUBLE"]
+        elif k >= 35:
+            line = ["ZERO! GOOD TO SEE YOU", "THAT'S HIM, THE KIND ONE", "ANYTHING FOR YOU, ZERO"]
+        elif k <= -35:
+            line = ["OH. IT'S HIM.", "HIDE YOUR WALLETS", "WATCH THAT ONE"]
+        else:
+            return
+        p = random.choice(people)
+        p.speech, p.speech_t = random.choice(line), 3.0
+        if k >= 35 and where == "party":
+            for q in people:
+                q.cheer = 2.0
+
+    def thought(self):
+        k, n = self.karma, len(self.own)
+        lines = []
+        if k >= 35:
+            lines += ["PEOPLE WAVE AT ME NOW", "IT FEELS GOOD TO HELP", "THE CAFE SENT A CARD"]
+        if k <= -35:
+            lines += ["NOBODY WAVES ANY MORE", "IT'S ONLY BUSINESS. ISN'T IT?", "WAS THAT CAR FOLLOWING ME?"]
+        if n >= 4:
+            lines += ["NOT BAD FOR A MAN IN A BOX", "%d PLACES WITH MY NAME ON" % n]
+        elif n == 0 and self.w.man.coins >= 60:
+            lines += ["I SHOULD PUT THIS MONEY TO WORK", "I COULD BUY SOMETHING..."]
+        if self.debt:
+            lines += ["I OWE $%d..." % self.debt]
+        if self.mail is not None:
+            lines += ["THERE'S POST ON THE MAT", "I HAVE A DECISION TO MAKE"]
+        return random.choice(lines) if lines else None
+
+    # ---- the town screen ----
+    def actions(self, sid):
+        m, out = self.w.man, []
+        if sid == "bank":
+            out.append(("BORROW $100", "borrow", self.debt + 100 <= self.limit()))
+            if self.debt:
+                out.append(("REPAY $%d" % min(self.debt, m.coins), "repay", m.coins > 0))
+        elif sid == "hall":
+            out.append(("GIVE $%d TO THE TOWN" % self.gift(), "donate", m.coins >= self.gift()))
+            if not self.crown and self.karma >= 60:
+                out.append(("RUN FOR MAYOR $1000", "mayor", self.worth() >= 3000 and m.coins >= 1000))
+            elif not self.crown and self.karma <= -60:
+                out.append(("TAKE OVER THE TOWN $1000", "kingpin", self.worth() >= 3000 and m.coins >= 1000))
+        elif sid in self.own:
+            o, a = self.own[sid], ASSET[sid]
+            out.append(("RUN IT: " + POLICY[a["kind"]][o[0]], "policy", True))
+            if o[1] < 3:
+                out.append(("UPGRADE $%d" % self.up_cost(sid), "up", m.coins >= self.up_cost(sid)))
+            out.append((("SURE? ENTER AGAIN" if self.sure == sid else "SELL $%d" % int(o[2] * 0.7)), "sell", True))
+        else:
+            out.append(("BUY $%d" % ASSET[sid]["price"], "buy", not self.locked(sid) and m.coins >= ASSET[sid]["price"]))
+        return out
+
+    def describe(self, sid):
+        a = ASSET[sid]
+        if sid == "bank":
+            if self.karma >= -15:
+                self.shark = self.shark and self.debt > 0
+                return (("YOU OWE $%d" % self.debt) if self.debt else "NO DEBTS",
+                        "THE BANK TRUSTS YOU UP TO $%d" % self.limit())
+            return (("YOU OWE $%d" % self.debt) if self.debt else "NO DEBTS",
+                    "THE BANK WON'T SEE YOU. A LOAN SHARK WILL.")
+        if sid == "hall":
+            if self.crown:
+                return (self.title(), "THE TOWN IS YOURS.")
+            if self.karma <= -25:
+                return (self.title(), "A BAD NAME CAN BE MENDED BY GIVING.")
+            return (self.title(), "MAYOR: REPUTATION 60 AND WORTH $3000")
+        if sid in self.own:
+            o = self.own[sid]
+            if o[3]:
+                return ("YOURS, LEVEL %d" % o[1], "CLOSED BY A WALKOUT" if a["kind"] == "biz" else "STANDING EMPTY")
+            return ("YOURS, LEVEL %d, EARNS $%d" % (o[1], self.income(sid)), P_HINT[o[0]])
+        if self.locked(sid):
+            return ("NOT FOR SALE TO YOU", ("ONLY FOR A TRUSTED NAME: REPUTATION %d+" % a["need"]) if a["need"] > 0
+                    else ("ONLY FOR A SHADY NAME: REPUTATION %d OR LESS" % a["need"]))
+        return ("FOR SALE, EARNS $%d A PAYDAY" % a["pay"], a["note"])
+
+    def do(self, sid, what):
+        m = self.w.man
+        if what != "sell":
+            self.sure = None
+        if what == "buy":
+            a = ASSET[sid]
+            m.coins -= a["price"]
+            self.own[sid] = [1, 1, a["price"], 0]
+            self.bought = sid
+            self.tell("YOU BOUGHT %s." % the(sid))
+            play("coin")
+        elif what == "policy":
+            self.own[sid][0] = (self.own[sid][0] + 1) % 3
+        elif what == "up":
+            c = self.up_cost(sid)
+            m.coins -= c
+            self.own[sid][2] += c
+            self.own[sid][1] += 1
+            play("coin")
+        elif what == "sell":
+            if self.sure != sid:
+                self.sure = sid
+                return
+            self.sure = None
+            m.coins += int(self.own.pop(sid)[2] * 0.7)
+            self.tell("YOU SOLD %s." % the(sid))
+            play("coin")
+        elif what == "borrow":
+            self.shark = self.shark or self.karma < -15
+            self.debt += 100
+            m.coins += 100
+            play("coin")
+        elif what == "repay":
+            n = min(self.debt, m.coins)
+            m.coins -= n
+            self.debt -= n
+            play("coin")
+        elif what == "donate":
+            m.coins -= self.gift()
+            self.add_karma(4)
+            self.tell("YOUR GIFT PAID FOR SOMETHING THE TOWN NEEDED.")
+            play("coin")
+        elif what in ("mayor", "kingpin"):
+            m.coins -= 1000
+            self.crown = what
+            self.tell("THE TOWN VOTED. YOU ARE THE MAYOR!" if what == "mayor" else "NOTHING MOVES IN THIS TOWN WITHOUT YOU NOW.")
+            play("cheer")
+
+    def key(self, pressed):
+        """Keys while the town screen is up.  Returns False once it should close."""
+        for k in pressed:
+            if self.card:
+                if k in ("ok", "esc"):
+                    self.card = None
+            elif self.mail is not None:
+                if k in ("left", "right"):
+                    self.pick = 1 - self.pick
+                elif k == "ok":
+                    opt = self.options()[self.pick]
+                    if self.w.man.coins + opt[1] >= 0:
+                        self.decide(opt)
+                elif k == "esc":
+                    return False
+            else:
+                acts = self.actions(STREET[self.sel])
+                if k in ("left", "right"):
+                    self.sel = (self.sel + (1 if k == "right" else -1)) % len(STREET)
+                    self.act, self.sure = 0, None
+                elif k == "up":
+                    self.act = (self.act - 1) % len(acts)
+                elif k == "down":
+                    self.act = (self.act + 1) % len(acts)
+                elif k == "ok":
+                    label, what, can = acts[self.act % len(acts)]
+                    if can:
+                        self.do(STREET[self.sel], what)
+                        self.act = min(self.act, len(self.actions(STREET[self.sel])) - 1)
+                elif k == "esc":
+                    return False
+        return True
+
+    def close(self):
+        """Back to the flat.  If he bought something he goes to sign for it."""
+        self.open, self.sure = False, None
+        m, w = self.w.man, self.w
+        if self.bought and not (m.away or w.party or m.sleeping or m.body or m.hidden) and w.level():
+            m.interrupt()
+            m.script = m.act_deal(self.bought)
+        self.bought = None
+
+    def draw(self, surf):
+        w, m = self.w, self.w.man
+        sun = w.sun()
+        hi, lo = mix((14, 16, 44), (112, 172, 228), sun), mix((44, 38, 76), (206, 226, 240), sun)
+        for i in range(11):
+            surf.fill(mix(hi, lo, i / 10.0), (0, 14 + i * 8, W, 8))
+        if sun < 0.4:
+            rnd = random.Random(7)
+            for _ in range(40):
+                surf.fill((200, 200, 230), (rnd.randrange(W), rnd.randrange(14, 70), 1, 1))
+        surf.fill((58, 60, 84), (0, 100, W, 6))
+        for x in range(0, W, 12):
+            surf.fill((150, 150, 120), (x - int(self.scroll or 0) % 12, 103, 6, 1))
+        # the street: painted once, until something about it changes
+        key = tuple((s, tuple(self.own[s][:2]) if s in self.own else self.locked(s)) for s in STREET[2:])
+        if key != self.street_key:
+            self.street_key = key
+            if self.street is None:
+                self.street = pygame.Surface((len(STREET) * SLOT, 92))
+                self.street.set_colorkey(KEY)
+            self.street.fill(KEY)
+            for i, s in enumerate(STREET):
+                o = self.own.get(s)
+                self.tops[s] = paint_building(self.street, i * SLOT + SLOT // 2, 86, s, bool(o),
+                                              s not in self.own and ASSET[s]["kind"] != "civic" and self.locked(s),
+                                              o[0] if o else 1, o[1] if o else 0)
+        want = clamp(self.sel * SLOT + SLOT // 2 - W // 2, 0, len(STREET) * SLOT - W)
+        self.scroll = want if self.scroll is None else lerp(self.scroll, want, 0.3)
+        sx = -int(round(self.scroll))
+        surf.blit(self.street, (sx, 14))
+        for i, s in enumerate(STREET):
+            cx = sx + i * SLOT + SLOT // 2
+            if not -SLOT < cx < W + SLOT:
+                continue
+            a = ASSET[s]
+            if a["kind"] != "civic" and s not in self.own:
+                tag = "$%d" % a["price"]
+                text(surf, tag, cx - len(tag) * 2, 14 + self.tops[s] - 8, (250, 214, 110) if m.coins >= a["price"] and not self.locked(s) else (150, 150, 180))
+            if s in self.own and self.own[s][3]:
+                text(surf, "SHUT", cx - 8, 14 + self.tops[s] - 16, (240, 80, 70))
+            if i == self.sel:
+                y = 14 + self.tops[s] - (26 if s in self.own else 18) + int(math.sin(self.t * 6) * 2)
+                pygame.draw.polygon(surf, (255, 255, 255), [(cx - 4, y), (cx + 4, y), (cx, y + 5)])
+                pygame.draw.polygon(surf, INK, [(cx - 4, y), (cx + 4, y), (cx, y + 5)], 1)
+        # the top bar: who he is, what he has, what people think of him
+        surf.fill((20, 20, 44), (0, 0, W, 13))
+        text(surf, self.title(), 4, 4, (250, 250, 240))
+        text(surf, "$%d" % m.coins, 104, 4, (250, 214, 110))
+        text(surf, "+$%d A PAYDAY" % self.total(), 140, 4, (120, 220, 140))
+        if self.debt:
+            text(surf, "OWES $%d" % self.debt, 204, 4, (240, 110, 100))
+        text(surf, "REP", 254, 4, (150, 150, 180))
+        for i in range(44):
+            surf.fill(shade(mix((230, 80, 80), (120, 220, 140), i / 43.0), 0.75), (270 + i, 5, 1, 4))
+        surf.fill((255, 255, 255), (270 + int((self.karma + 100) / 200.0 * 43), 3, 1, 8))
+        # the panel: the building under the arrow, and what can be done with it
+        surf.fill((20, 20, 44), (0, 106, W, 64))
+        surf.fill((60, 60, 100), (0, 106, W, 1))
+        sid = STREET[self.sel]
+        a = ASSET[sid]
+        status, info = self.describe(sid)
+        text(surf, a["name"], 6, 110, (250, 250, 240))
+        text(surf, status, 6, 118, (250, 214, 110))
+        text(surf, info, 6, 126, (150, 150, 180))
+        acts = self.actions(sid)
+        for i, (label, what, can) in enumerate(acts):
+            on = i == self.act % len(acts)
+            if on:
+                surf.fill((50, 50, 96), (4, 134 + i * 8, 164, 8))
+            text(surf, ("> " if on else "  ") + label, 6, 136 + i * 8, ((250, 250, 240) if on else (190, 190, 210)) if can else (100, 100, 130))
+        text(surf, "ARROWS: MOVE   ENTER: DO   ESC: HOME", 6, 163, (110, 110, 150))
+        surf.fill((60, 60, 100), (172, 108, 1, 60))
+        text(surf, "NEWS", 178, 110, (230, 200, 110))
+        y = 118
+        for n, item in enumerate(self.news):
+            for l in wrap(item, 34):
+                if y > 160:
+                    break
+                text(surf, l, 178, y, (210, 210, 226) if n == 0 else (130, 130, 164))
+                y += 6
+            y += 2
+        if not self.news:
+            text(surf, "NOTHING YET. BUY SOMETHING.", 178, 118, (130, 130, 164))
+        # a choice to make, or how the last one turned out
+        if self.card or self.mail is not None:
+            dim = pygame.Surface((W, H))
+            dim.set_alpha(150)
+            surf.blit(dim, (0, 0))
+            pygame.draw.rect(surf, (252, 250, 240), (36, 24, 248, 122), border_radius=3)
+            pygame.draw.rect(surf, INK, (36, 24, 248, 122), 1, border_radius=3)
+        if self.card:
+            result, coins, karma = self.card
+            text(surf, "WHAT CAME OF IT", 160 - 30, 32, (160, 110, 40))
+            for i, l in enumerate(wrap(result, 56)):
+                text(surf, l, 160 - len(l) * 2, 52 + i * 8, INK)
+            if coins:
+                s = ("+$%d" % coins) if coins > 0 else ("-$%d" % -coins)
+                text(surf, s, 160 - len(s) * 2, 84, (40, 130, 70) if coins > 0 else (190, 60, 50))
+            s = "YOUR NAME IS %s" % ("BETTER FOR IT" if karma > 0 else "WORSE FOR IT")
+            text(surf, s, 160 - len(s) * 2, 96, (40, 130, 70) if karma > 0 else (190, 60, 50))
+            text(surf, "ENTER", 160 - 10, 130, (120, 120, 140))
+        elif self.mail is not None:
+            text(surf, "A CHOICE TO MAKE", 160 - 32, 32, (160, 110, 40))
+            for i, l in enumerate(wrap(CHOICES[self.mail][0], 56)):
+                text(surf, l, 160 - len(l) * 2, 48 + i * 8, INK)
+            for i, opt in enumerate(self.options()):
+                x = 44 + i * 120
+                can = m.coins + opt[1] >= 0
+                on = i == self.pick
+                pygame.draw.rect(surf, (255, 236, 170) if on else (232, 228, 214), (x, 96, 112, 30), border_radius=3)
+                pygame.draw.rect(surf, INK if on else (150, 150, 160), (x, 96, 112, 30), 2 if on else 1, border_radius=3)
+                text(surf, opt[0], x + 56 - len(opt[0]) * 2, 102, INK if can else (150, 150, 160))
+                s = "CAN'T AFFORD IT" if not can else ("+$%d" % opt[1]) if opt[1] > 0 else ("-$%d" % -opt[1]) if opt[1] else "COSTS NOTHING"
+                text(surf, s, x + 56 - len(s) * 2, 114, (150, 150, 160) if not can else (40, 130, 70) if opt[1] > 0 else (190, 60, 50) if opt[1] else (120, 120, 140))
+            text(surf, "LEFT / RIGHT, THEN ENTER", 160 - 48, 134, (120, 120, 140))
+
+    # ---- keeping it ----
+    def dump(self):
+        return {"karma": self.karma, "own": self.own, "debt": self.debt, "shark": self.shark, "crown": self.crown,
+                "news": self.news, "seen": self.seen, "later": self.later, "mail": self.mail, "flip": self.flip}
+
+    def load(self, d):
+        if not isinstance(d, dict):
+            return
+        try:
+            self.karma = clamp(float(d.get("karma", 0)), -100, 100)
+            self.own = {s: [int(o[0]) % 3, clamp(int(o[1]), 1, 3), int(o[2]), int(o[3])]
+                        for s, o in d.get("own", {}).items() if s in ASSET and ASSET[s]["kind"] != "civic"}
+            self.debt, self.shark = max(0, int(d.get("debt", 0))), bool(d.get("shark"))
+            self.crown = d.get("crown") if d.get("crown") in ("mayor", "kingpin") else None
+            self.news = [str(s) for s in d.get("news", [])][:6]
+            self.seen = [int(i) for i in d.get("seen", []) if 0 <= int(i) < len(CHOICES)]
+            self.later = [[float(t), tag] for t, tag in d.get("later", []) if tag in LATER]
+            mail = d.get("mail")
+            if isinstance(mail, int) and 0 <= mail < len(CHOICES):
+                self.mail, self.flip = mail, bool(d.get("flip"))
+        except (TypeError, ValueError, KeyError, IndexError):
+            pass
 
 
 # --------------------------------------------------------------------------
@@ -5179,6 +5983,29 @@ def main():
     sim_roll, sim_pitch = [float(v) for v in ARGS.tilt.split(",")]
     ta, tb = [int(v) for v in ARGS.tiltat.split("-")]
     sa, sb = ([int(v) for v in ARGS.shakeat.split("-")] if ARGS.shakeat else (1, 0))
+    for part in filter(None, ARGS.life.split(",")):       # test helper: set up a life
+        k, _, v = part.partition("=")
+        L = world.life
+        if k == "coins":
+            world.man.coins = int(v)
+        elif k == "karma":
+            L.karma = float(v)
+        elif k == "own":
+            for s in v.split("+"):
+                sid, _, how = s.partition(":")
+                L.own[sid] = [int(how[:1] or 1), int(how[1:2] or 1), ASSET[sid]["price"], int(how[2:3] or 0)]
+        elif k == "news":
+            for s in v.split("+"):
+                L.tell(LATER[s][4])
+        elif k in ("sel", "mail", "pick", "act", "debt"):
+            setattr(L, k, int(v))
+        elif k == "open":
+            L.open = True
+        elif k == "card":
+            L.mail = int(v)
+            L.decide(L.options()[L.pick])
+        elif k == "crown":
+            L.crown = v
     if ARGS.act:
         m = world.man
         name, _, arg = ARGS.act.partition(":")
@@ -5196,8 +6023,15 @@ def main():
                 pressed, mouse, clicked = keys.poll()
                 held = keys.held
                 chars, keys.chars = keys.chars, []
-                if typing is None:
-                    if "T" in chars and not calib:
+                life = world.life
+                if life.open:                           # the town screen takes every key
+                    if not life.key(pressed) or "E" in chars:
+                        life.close()
+                    pressed, held, clicked, mouse, cur_t = [], set(), False, None, 0.0
+                elif typing is None:
+                    if "E" in chars and not calib:
+                        life.open, life.scroll, pressed = True, None, []
+                    elif "T" in chars and not calib:
                         typing = ""
                         pressed = []
                 else:                                   # everything typed goes into the line
@@ -5256,8 +6090,12 @@ def main():
                 if sa <= frame <= sb:
                     held = held | {"shake"}
             g, jerk = tilt.read(dt, held)
-            world.update(dt, g, jerk)
-            world.draw(screen)
+            if world.life.open:                         # the flat waits while he does business
+                world.life.t += dt
+                world.life.draw(screen)
+            else:
+                world.update(dt, g, jerk)
+                world.draw(screen)
 
             cur_t -= dt
             hint_t -= dt
@@ -5275,8 +6113,8 @@ def main():
                 pygame.draw.rect(screen, INK, (86, 70, 148, 26), 1, border_radius=3)
                 for i, l in enumerate(msg):
                     text(screen, l, 160 - len(l) * 2, 76 + i * 8, INK)
-            elif hint_t > 0 and not HEADLESS:
-                text(screen, "ARROWS + ENTER: FIX", 4, 150, (150, 150, 180))
+            elif hint_t > 0 and not HEADLESS and not world.life.open:
+                text(screen, "ARROWS + ENTER: FIX   E: EMPIRE", 4, 150, (150, 150, 180))
                 text(screen, "TAB: NEXT  T: TALK  ESC: QUIT", 4, 158, (150, 150, 180))
 
             if typing is not None:

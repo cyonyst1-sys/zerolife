@@ -30,6 +30,23 @@ limping for a while; keep throwing him and he comes to the glass with a placard.
 tap on the case is a knock. `--weather LAT,LON` shows the real weather for that place: it
 asks api.open-meteo.com, so only use it if you are happy to send that location.
 
+New in 0.5, a life beyond the flat. Press **E** for the town: a high street of businesses
+and houses he can buy with his coins, from a lemonade stand to a tower with his name on it.
+Each one pays him every payday (two and a half minutes), can be upgraded twice, and is run
+one of three ways: generously (less money, more goodwill), fairly, or by squeezing staff and
+tenants (more money, bad feeling, walkouts). Every few minutes a choice lands on the mat
+(`POST: E` blinks): a found wallet, a tenant who can't pay, a bribe, a rival going under.
+The decent answer usually costs something now and may pay back later; the other one pays
+now and may come back to bite. Leave a choice long enough and he follows his own nature.
+
+All of it moves his reputation, and his reputation decides what he can do. A good name
+gets cheaper shopping, better trade, a bank that lends, gifts at the door, cheering
+friends, the dog shelter and the free clinic, and in the end the mayor's chain. A bad name
+gets him the pawn shop and the casino, a loan shark instead of a bank, higher prices,
+bricks through the window, fines, friends who stop asking him round, and a way to take the
+town over instead. Buy the shop and his groceries are free; buy the office and he is the
+boss; buy Sam's building and how he sets the rent decides how game night greets him.
+
 The lamp is a real light: each side of the furniture is lit by how squarely it
 faces the bulb, things throw shadows away from it, and all of that swings when
 the lamp swings. The man is a jointed figure 25 pixels tall. His arms and legs
@@ -59,10 +76,10 @@ tank to feed the fish and top up the water. Click him to poke him.
 
 ## Put it on the device (sideload)
 
-Copy `dist/zerolife_0.4.1-1_all.deb` over and install it:
+Copy `dist/zerolife_0.5.0-1_all.deb` over and install it:
 
-    scp dist/zerolife_0.4.1-1_all.deb <user>@<device-ip>:/tmp/
-    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.4.1-1_all.deb
+    scp dist/zerolife_0.5.0-1_all.deb <user>@<device-ip>:/tmp/
+    ssh <user>@<device-ip> sudo apt install /tmp/zerolife_0.5.0-1_all.deb
 
 `apt` pulls in `python3-pygame` if it is missing. The launcher rescans every few
 seconds; "Zero Life" appears on the home screen. To run it from a shell instead:
