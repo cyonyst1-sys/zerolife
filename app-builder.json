@@ -1,0 +1,33 @@
+{
+  "app_name": "Tiny Loft",
+  "package_name": "tinyloft",
+  "version": "0.1.1",
+  "revision": "1",
+  "architecture": "all",
+  "maintainer": "cyonyst1-sys <cyonyst1-sys@users.noreply.github.com>",
+  "depends": "python3, python3-pygame",
+  "description": "A little man who lives in your CardputerZero. Tilt and shake his loft.",
+  "store": {
+    "summary": "A little man lives in your screen. Tilt and shake his loft.",
+    "description": "Tiny Loft is a pocket housemate. A small man lives in an isometric studio loft the size of your screen: he raids the fridge, watches TV from the couch, sleeps in the loft bed, showers, feeds his fish, goes to work and comes home with groceries. The accelerometer is wired into his house. Tilt the device and the fish tank sloshes and spills, the lamp swings and things slide off their shelves. Shake it or flip it over and the lights flicker, things smash and he goes flying. He notices what you broke and goes to look at the pieces. Move the cursor to the dotted outline and press Enter to give him a new one.",
+    "categories": ["Games"],
+    "screenshots": ["store/screenshots/1-home.png", "store/screenshots/2-tilt.png", "store/screenshots/3-flip.png", "store/screenshots/4-night.png", "store/screenshots/5-hello.png"],
+    "icon": "store/tinyloft.png",
+    "license": "MIT",
+    "source_repo": "https://github.com/cyonyst1-sys/tinyloft",
+    "author": {
+      "github": "cyonyst1-sys",
+      "display_name": "cyonyst1-sys"
+    },
+    "share_code": "LOFT",
+    "permissions": {
+      "camera": false,
+      "microphone": false,
+      "imu": true,
+      "network": false,
+      "additional_hardware": false,
+      "background_service": false,
+      "external_display": false
+    }
+  }
+}
